@@ -11,7 +11,7 @@ spec:
     path: vision-ai/k8s
   destination:
     server: https://kubernetes.default.svc
-    namespace: visionai
+    namespace: sovereign-ai-ci
   syncPolicy:
     automated:
       prune: true

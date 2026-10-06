@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: vision-ai-yolox-build
-  namespace: visionai
+  namespace: sovereign-ai-ci
 spec:
   params:
     - name: git-url
@@ -76,10 +76,10 @@ spec:
             script: |
               #!/usr/bin/env bash
               set -e
-              echo "Restarting deployments in john namespace..."
-              kubectl rollout restart deployment/vision-ai-yolox -n john
-              kubectl rollout restart deployment/yolo26-predictor -n john || echo "yolo26-predictor not found, skipping"
+              echo "Restarting deployments in sovereign-ai namespace..."
+              kubectl rollout restart deployment/vision-ai-yolox -n sovereign-ai
+              kubectl rollout restart deployment/yolo26-predictor -n sovereign-ai || echo "yolo26-predictor not found, skipping"
               echo "Waiting for rollouts to complete..."
-              kubectl rollout status deployment/vision-ai-yolox -n john --timeout=120s
-              kubectl rollout status deployment/yolo26-predictor -n john --timeout=300s || true
+              kubectl rollout status deployment/vision-ai-yolox -n sovereign-ai --timeout=120s
+              kubectl rollout status deployment/yolo26-predictor -n sovereign-ai --timeout=300s || true
               echo "Rollout restarts complete."

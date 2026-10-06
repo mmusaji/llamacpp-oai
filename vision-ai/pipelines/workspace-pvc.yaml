@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: vision-ai-yolox-build-source
-  namespace: visionai
+  namespace: sovereign-ai-ci
 spec:
   accessModes:
     - ReadWriteOnce

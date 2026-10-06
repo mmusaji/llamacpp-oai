@@ -2,7 +2,7 @@ apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
   name: llamacpp-lemonade
-  namespace: john
+  namespace: sovereign-ai
   annotations:
     opendatahub.io/recommended-accelerators: '["amd.com/gpu"]'
     opendatahub.io/runtime-version: (experiment-lemonade-rocm)

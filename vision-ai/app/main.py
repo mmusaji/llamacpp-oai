@@ -26,7 +26,7 @@ EXCLUDED_CLASSES = {c.strip() for c in _excluded_env.split(",") if c.strip()} if
 # Multi-model: "yolo26=host:port,yolo26-seg=host:port"
 # Falls back to single INFERENCE_URL if not set
 INFERENCE_ENDPOINTS_ENV = os.getenv("INFERENCE_ENDPOINTS", "")
-INFERENCE_URL = os.getenv("INFERENCE_URL", "yolo26-grpc.john.svc.cluster.local:8001")
+INFERENCE_URL = os.getenv("INFERENCE_URL", "yolo26-grpc.sovereign-ai.svc.cluster.local:8001")
 
 camera: RTSPCamera | None = None
 _detectors: dict[str, KServeDetector] = {}

@@ -2,7 +2,7 @@ apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
   name: yolo26
-  namespace: john
+  namespace: sovereign-ai
   annotations:
     modelFormat: onnx
     opendatahub.io/connection-path: /models/yolo26m.onnx

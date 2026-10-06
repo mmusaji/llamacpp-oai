@@ -2,7 +2,7 @@ apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
   name: github-push-binding
-  namespace: visionai
+  namespace: sovereign-ai-ci
 spec:
   params:
     - name: git-url
@@ -14,7 +14,7 @@ apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerTemplate
 metadata:
   name: vision-ai-yolox-build-template
-  namespace: visionai
+  namespace: sovereign-ai-ci
 spec:
   params:
     - name: git-url
@@ -24,7 +24,7 @@ spec:
       kind: PipelineRun
       metadata:
         generateName: vision-ai-yolox-build-
-        namespace: visionai
+        namespace: sovereign-ai-ci
       spec:
         pipelineRef:
           name: vision-ai-yolox-build
@@ -54,7 +54,7 @@ apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener
 metadata:
   name: github-listener
-  namespace: visionai
+  namespace: sovereign-ai-ci
 spec:
   serviceAccountName: pipeline
   triggers:
@@ -112,7 +112,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: github-webhook
-  namespace: visionai
+  namespace: sovereign-ai-ci
 spec:
   port:
     targetPort: http-listener

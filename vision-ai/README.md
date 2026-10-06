@@ -84,7 +84,7 @@ Query parameters: `?model=yolo26-seg` to select a specific model, `?annotate=fal
 ### 1. Create namespace
 
 ```bash
-oc new-project john
+oc new-project sovereign-ai
 ```
 
 ### 2. Create the S3 data connection and service account
@@ -92,7 +92,7 @@ oc new-project john
 Create a data connection in OpenShift AI pointing to your S3 bucket containing the ONNX models. This creates a secret named `models-odf-s3` and a service account that the InferenceServices use to pull model weights.
 
 ```bash
-oc create sa models-odf-s3-sa -n john
+oc create sa models-odf-s3-sa -n sovereign-ai
 ```
 
 ### 3. Create the RTSP credentials secret
@@ -100,7 +100,7 @@ oc create sa models-odf-s3-sa -n john
 ```bash
 oc create secret generic rtsp-credentials \
   --from-literal=RTSP_URL='rtsp://<user>:<password>@<camera-ip>/stream1' \
-  -n john
+  -n sovereign-ai
 ```
 
 ### 4. Upload model weights to S3
@@ -188,7 +188,7 @@ Corrects barrel distortion from wide-angle lenses. Uses OpenCV's distortion mode
 Adjust live without redeploying:
 
 ```bash
-oc set env deployment/vision-ai-yolox UNDISTORT_K1="-0.35" -n john
+oc set env deployment/vision-ai-yolox UNDISTORT_K1="-0.35" -n sovereign-ai
 ```
 
 ## CI/CD

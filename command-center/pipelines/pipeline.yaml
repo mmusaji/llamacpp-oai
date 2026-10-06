@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: command-center-build
-  namespace: visionai
+  namespace: sovereign-ai-ci
 spec:
   params:
     - name: git-url
@@ -77,6 +77,6 @@ spec:
               #!/usr/bin/env bash
               set -e
               echo "Restarting command-center deployment..."
-              kubectl rollout restart deployment/command-center -n john
-              kubectl rollout status deployment/command-center -n john --timeout=120s
+              kubectl rollout restart deployment/command-center -n sovereign-ai
+              kubectl rollout status deployment/command-center -n sovereign-ai --timeout=120s
               echo "Rollout restart complete."

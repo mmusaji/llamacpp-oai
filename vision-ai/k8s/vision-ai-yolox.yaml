@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vision-ai-yolox
-  namespace: john
+  namespace: sovereign-ai
   labels:
     app: vision-ai-yolox
 spec:
@@ -23,7 +23,7 @@ spec:
           imagePullPolicy: Always
           env:
             - name: INFERENCE_ENDPOINTS
-              value: "yolo26=yolo26-grpc.john.svc.cluster.local:8001,yolo26-seg=yolo26-seg-grpc.john.svc.cluster.local:8001"
+              value: "yolo26=yolo26-grpc.sovereign-ai.svc.cluster.local:8001,yolo26-seg=yolo26-seg-grpc.sovereign-ai.svc.cluster.local:8001"
             - name: MODEL_NAME
               value: model
             - name: RTSP_URL
@@ -68,7 +68,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: vision-ai-yolox
-  namespace: john
+  namespace: sovereign-ai
 spec:
   ports:
     - name: http
@@ -81,7 +81,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: vision-ai-yolox
-  namespace: john
+  namespace: sovereign-ai
   annotations:
     haproxy.router.openshift.io/timeout: 300s
 spec:

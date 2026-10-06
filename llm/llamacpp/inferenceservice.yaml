@@ -2,7 +2,7 @@ apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
   name: qwen35-4b-testing
-  namespace: john
+  namespace: sovereign-ai
   annotations:
     openshift.io/display-name: qwen35-4b-testing
     security.opendatahub.io/enable-auth: "false"

@@ -18,9 +18,9 @@ app = FastAPI()
 
 PASSWORD = os.getenv("COMMAND_PASSWORD", "commander")
 JWT_SECRET = os.getenv("JWT_SECRET", os.urandom(32).hex())
-NAMESPACE = os.getenv("NAMESPACE", "john")
+NAMESPACE = os.getenv("NAMESPACE", "sovereign-ai")
 ENDPOINTS_CM = os.getenv("ENDPOINTS_CONFIGMAP", "gen-ai-aa-custom-model-endpoints")
-VISION_AI_URL = os.getenv("VISION_AI_URL", "http://vision-ai.john.svc.cluster.local:8080")
+VISION_AI_URL = os.getenv("VISION_AI_URL", "http://vision-ai.sovereign-ai.svc.cluster.local:8080")
 
 try:
     config.load_incluster_config()

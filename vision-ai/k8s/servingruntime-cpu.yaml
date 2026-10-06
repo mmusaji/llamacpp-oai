@@ -2,7 +2,7 @@ apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
   name: onnxruntime-cpu
-  namespace: john
+  namespace: sovereign-ai
   annotations:
     opendatahub.io/apiProtocol: REST
     opendatahub.io/template-name: onnxruntime-cpu

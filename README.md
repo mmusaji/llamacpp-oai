@@ -177,7 +177,7 @@ before applying anything:
 
 | What | Current value |
 |---|---|
-| Workload namespace | `john` |
+| Workload namespace | `sovereign-ai` |
 | Pipeline namespace | `visionai` |
 | Registry host | `registry-quay-app.quay.svc.cluster.local` (in-cluster) and `quay.apps.snuc.kubernetes.day` (route) |
 | Cluster domain | `apps.snuc.kubernetes.day` |
@@ -191,18 +191,18 @@ before applying anything:
 ### 1. Namespaces
 
 ```bash
-oc new-project john      # workloads: models, apps
-oc new-project visionai  # Tekton pipelines and triggers
+oc new-project sovereign-ai      # workloads: models, apps
+oc new-project sovereign-ai-ci  # Tekton pipelines and triggers
 ```
 
 ### 2. Model storage
 
-Create an OpenShift AI data connection in `john` pointing at your S3 bucket. It must
+Create an OpenShift AI data connection in `sovereign-ai` pointing at your S3 bucket. It must
 produce a secret named `models-odf-s3`. Then create the service account the
 InferenceServices use to pull weights:
 
 ```bash
-oc create sa models-odf-s3-sa -n john
+oc create sa models-odf-s3-sa -n sovereign-ai
 ```
 
 Upload the ONNX models to the bucket:
@@ -221,17 +221,17 @@ GGUF models for the LLM runtimes go in the same bucket; see
 # Registry push credentials for Tekton
 oc create secret docker-registry quay-push-secret \
   --docker-server=<your-registry> \
-  --docker-username=<user> --docker-password=<pass> -n visionai
-oc annotate secret quay-push-secret -n visionai \
+  --docker-username=<user> --docker-password=<pass> -n sovereign-ai-ci
+oc annotate secret quay-push-secret -n sovereign-ai-ci \
   tekton.dev/docker-0=https://<your-registry>
 
 # GitHub webhook shared secret (only if you want push-triggered builds)
 oc create secret generic github-webhook-secret \
-  --from-literal=secret=<random-string> -n visionai
+  --from-literal=secret=<random-string> -n sovereign-ai-ci
 
 # RTSP camera credentials (only if vision-ai reads a live camera)
 oc create secret generic rtsp-credentials \
-  --from-literal=RTSP_URL='rtsp://<user>:<pass>@<camera-ip>/stream1' -n john
+  --from-literal=RTSP_URL='rtsp://<user>:<pass>@<camera-ip>/stream1' -n sovereign-ai
 ```
 
 ### 4. Build the images
@@ -268,7 +268,7 @@ oc apply -f vision-ai/hardware-profiles/amd-gpu-vision.yaml  # only if you have 
 > profile will **not** remove it — `oc apply` merges maps and leaves the key in place.
 > Strip it explicitly:
 > ```bash
-> oc patch inferenceservice <name> -n john --type=json -p \
+> oc patch inferenceservice <name> -n sovereign-ai --type=json -p \
 >   '[{"op":"remove","path":"/spec/predictor/model/resources/requests/amd.com~1gpu"},
 >     {"op":"remove","path":"/spec/predictor/model/resources/limits/amd.com~1gpu"}]'
 > ```
@@ -308,9 +308,9 @@ the shared secret from step 3.
 ### 8. Verify
 
 ```bash
-oc get inferenceservice -n john          # all should reach READY=True
-oc get pods -n john
-oc get route command-center -n john      # open the UI
+oc get inferenceservice -n sovereign-ai          # all should reach READY=True
+oc get pods -n sovereign-ai
+oc get route command-center -n sovereign-ai      # open the UI
 ```
 
 If an InferenceService stays `Progressing`, check whether its pod is unschedulable —
