@@ -22,7 +22,7 @@ spec:
   multiModel: false
   containers:
     - name: kserve-container
-      image: quay.apps.snuc.kubernetes.day/visionai/visionai:cpu
+      image: quay.apps.snuc-openshift.demo.local/visionai/visionai:cpu
       imagePullPolicy: Always
       args:
         - --model_path=/mnt/models

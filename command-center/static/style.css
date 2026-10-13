@@ -343,6 +343,15 @@ body::after {
 }
 
 .model-item.offline { opacity: 0.4; }
+.model-item.generating .model-dot.online {
+  background: var(--amber, #d4a017);
+  box-shadow: 0 0 6px var(--amber, #d4a017);
+  animation: model-pulse 1.2s ease-in-out infinite;
+}
+@keyframes model-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
 
 .model-dot {
   width: 8px;
@@ -785,6 +794,76 @@ body::after {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+.vision-brief {
+  flex-shrink: 0;
+  min-height: 216px; /* ~140px + ~2cm */
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+
+.vision-brief::before {
+  content: "TACTICAL BRIEF";
+  display: block;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.vision-brief .brief-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.vision-brief .brief-row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.vision-brief .brief-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--green-dim, var(--text-dim));
+  padding-top: 1px;
+}
+
+.vision-brief .brief-value {
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.vision-brief .brief-fallback {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.vision-brief .brief-list {
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.vision-brief .brief-list li {
+  margin: 0 0 6px;
+}
+
+.vision-brief strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* Scrollbar */

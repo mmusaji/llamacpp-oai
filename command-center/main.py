@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import re
 import datetime
 import ssl
 import base64
@@ -358,6 +359,22 @@ async def vision_video_delete():
         return {"status": "error", "detail": str(e)}
 
 
+@app.get("/api/vision/detections", dependencies=[Depends(verify_token)])
+async def vision_detections(model: str = None):
+    """Latest live/video detections from vision-ai (for Shepherd brief on feeds)."""
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    upstream = f"{VISION_AI_URL}/detections"
+    if model:
+        upstream += f"?model={model}"
+    async with httpx.AsyncClient(verify=ssl_ctx, timeout=15.0) as c:
+        resp = await c.get(upstream)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return resp.json()
+
+
 @app.post("/api/vision/detect/annotate", dependencies=[Depends(verify_token)])
 async def vision_detect_annotate(request: Request, model: str = None):
     ssl_ctx = ssl.create_default_context()
@@ -380,7 +397,124 @@ async def vision_detect_annotate(request: Request, model: str = None):
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
-        return StreamingResponse(io.BytesIO(resp.content), media_type="image/jpeg")
+        headers = {
+            "Access-Control-Expose-Headers": "X-Detections, X-Detection-Model",
+        }
+        if resp.headers.get("x-detections"):
+            headers["X-Detections"] = resp.headers["x-detections"]
+        if resp.headers.get("x-detection-model"):
+            headers["X-Detection-Model"] = resp.headers["x-detection-model"]
+        return StreamingResponse(
+            io.BytesIO(resp.content),
+            media_type="image/jpeg",
+            headers=headers,
+        )
+
+
+@app.post("/api/vision/detect", dependencies=[Depends(verify_token)])
+async def vision_detect(request: Request, model: str = None):
+    """JSON detections (with CLIP crop refine on vision-ai)."""
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    timeout = httpx.Timeout(connect=60.0, read=300.0, write=30.0, pool=30.0)
+
+    upstream = f"{VISION_AI_URL}/detect"
+    if model:
+        upstream += f"?model={model}"
+
+    body = await request.body()
+    content_type = request.headers.get("content-type", "")
+
+    async with httpx.AsyncClient(verify=ssl_ctx, timeout=timeout) as c:
+        resp = await c.post(
+            upstream,
+            content=body,
+            headers={"Content-Type": content_type},
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return resp.json()
+
+
+@app.post("/api/vision/brief", dependencies=[Depends(verify_token)])
+async def vision_brief(request: Request):
+    """Tactical text brief from refined detections via Shepherd (or configured model)."""
+    body = await request.json()
+    detections = body.get("detections") or []
+    model_endpoint = body.get("model_endpoint") or os.getenv("BRIEF_MODEL", "shepherd-alpha")
+
+    if not detections:
+        return {"brief": "No detections to brief.", "model": model_endpoint}
+
+    lines = []
+    for d in detections[:12]:
+        name = d.get("class_name", "?")
+        conf = d.get("confidence", 0)
+        was = d.get("detector_class")
+        if was and was != name:
+            lines.append(f"- {name} ({conf:.0%}; detector said {was})")
+        else:
+            lines.append(f"- {name} ({conf:.0%})")
+    inventory = "\n".join(lines)
+
+    prompt = (
+        "You are a military intelligence specialist. From this sensor inventory "
+        "(object detector + visual reclassification of each box), give exactly 4 lines "
+        "in this plain format (no markdown, no bold, no numbering):\n"
+        "Present: ...\n"
+        "Threat: ...\n"
+        "Risk: ...\n"
+        "Action: ...\n"
+        "Be concise. Do not invent objects not listed.\n\nInventory:\n" + inventory
+    )
+
+    chat_body = {
+        "model": "default",
+        "messages": [
+            {"role": "system", "content": "You are a military intelligence specialist in doctrine."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 280,
+        "stream": False,
+    }
+
+    ext = next((ep for ep in _get_external_endpoints() if ep["name"] == model_endpoint), None)
+    if ext:
+        chat_url = ext["url"].rstrip("/") + "/v1/chat/completions"
+        chat_body["model"] = ext.get("model_id", "default")
+        headers = {"Content-Type": "application/json"}
+        if ext.get("token"):
+            headers["Authorization"] = f"Bearer {ext['token']}"
+    else:
+        chat_url = _get_model_url(model_endpoint) + "/v1/chat/completions"
+        sa = _get_sa_token()
+        headers = {"Content-Type": "application/json"}
+        if sa:
+            headers["Authorization"] = f"Bearer {sa}"
+
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    timeout = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
+
+    async with httpx.AsyncClient(verify=ssl_ctx, timeout=timeout) as c:
+        resp = await c.post(chat_url, json=chat_body, headers=headers)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        data = resp.json()
+        text = (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+        # Shepherd sometimes emits chain-of-thought markers
+        text = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.I).strip()
+        if "</think>" in text.lower():
+            text = re.split(r"</think>", text, flags=re.I)[-1].strip()
+        return {"brief": text or "(empty brief)", "model": model_endpoint, "inventory": inventory}
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

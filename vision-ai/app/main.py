@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import threading
@@ -14,6 +15,7 @@ from PIL import Image
 from app.detector import KServeDetector, draw_detections
 from app.camera import RTSPCamera
 from app.video import VideoPlayer
+from app import refine
 
 MODEL_NAME = os.getenv("MODEL_NAME", "model")
 RTSP_URL = os.getenv("RTSP_URL", "rtsp://172.16.199.110/stream1")
@@ -23,10 +25,21 @@ UNDISTORT_K1 = float(os.getenv("UNDISTORT_K1", "0"))
 _excluded_env = os.getenv("EXCLUDED_CLASSES", "")
 EXCLUDED_CLASSES = {c.strip() for c in _excluded_env.split(",") if c.strip()} if _excluded_env else set()
 
-# Multi-model: "yolo26=host:port,yolo26-seg=host:port"
+# Multi-model: "yolo26=host:port,yolo-military=host:port"
 # Falls back to single INFERENCE_URL if not set
 INFERENCE_ENDPOINTS_ENV = os.getenv("INFERENCE_ENDPOINTS", "")
 INFERENCE_URL = os.getenv("INFERENCE_URL", "yolo26-grpc.sovereign-ai.svc.cluster.local:8001")
+
+# Class names: CLASS_NAMES_<MODEL> (e.g. CLASS_NAMES_YOLO_MILITARY) or CLASS_NAMES default.
+# Comma-separated. Empty → COCO-80 in the detector.
+_DEFAULT_CLASS_NAMES_ENV = os.getenv("CLASS_NAMES", "")
+
+
+def _class_names_for(model: str) -> list[str] | None:
+    key = "CLASS_NAMES_" + model.upper().replace("-", "_")
+    raw = os.getenv(key) or _DEFAULT_CLASS_NAMES_ENV
+    names = [c.strip() for c in raw.split(",") if c.strip()]
+    return names or None
 
 camera: RTSPCamera | None = None
 _detectors: dict[str, KServeDetector] = {}
@@ -43,6 +56,7 @@ _video_masks: dict[str, list[np.ndarray] | None] = {}
 _video_lock = threading.Lock()
 _video_threads: list[threading.Thread] = []
 _video_running = False
+_video_generation = 0
 
 
 def _inference_loop(model_name: str, detector: KServeDetector):
@@ -84,18 +98,21 @@ def _video_inference_loop(model_name: str, detector: KServeDetector):
 
 
 def _stop_video():
-    global _video_player, _video_running, _video_threads
+    global _video_player, _video_running, _video_threads, _video_generation
+    # Bump generation first so any open /video/stream generators exit promptly
+    _video_generation += 1
     _video_running = False
-    for t in _video_threads:
-        t.join(timeout=5)
-    _video_threads = []
-    if _video_player:
-        _video_player.stop()
+    player = _video_player
+    _video_player = None
+    if player:
+        player.stop()
         try:
-            os.unlink(_video_player.path)
+            os.unlink(player.path)
         except OSError:
             pass
-        _video_player = None
+    for t in _video_threads:
+        t.join(timeout=1.0)
+    _video_threads = []
     _video_detections.clear()
     _video_masks.clear()
 
@@ -116,12 +133,16 @@ async def lifespan(app: FastAPI):
         endpoints["default"] = INFERENCE_URL
 
     for name, url in endpoints.items():
+        # Military World: skip COCO noise filter (labels won't match)
+        names = _class_names_for(name)
+        excluded = set() if names else EXCLUDED_CLASSES
         _detectors[name] = KServeDetector(
             inference_url=url,
             model_name=MODEL_NAME,
             input_size=(INPUT_SIZE, INPUT_SIZE),
             conf_threshold=CONF_THRESHOLD,
-            excluded_classes=EXCLUDED_CLASSES,
+            excluded_classes=excluded,
+            class_names=names,
         )
         _model_detections[name] = []
         _model_masks[name] = None
@@ -136,6 +157,13 @@ async def lifespan(app: FastAPI):
         t = threading.Thread(target=_inference_loop, args=(name, detector), daemon=True)
         t.start()
         _inference_threads.append(t)
+
+    # Warm CLIP so first booth upload is not a cold download
+    try:
+        ok = refine.warmup()
+        print(f"crop refine: {'ready' if ok else 'disabled/unavailable'}", flush=True)
+    except Exception as e:
+        print(f"crop refine warmup failed: {e}", flush=True)
 
     yield
 
@@ -163,6 +191,7 @@ def health():
         "camera_connected": camera.connected if camera else False,
         "inference_running": _inference_running,
         "models": list(_detectors.keys()),
+        "refine_crops": refine.enabled(),
     }
 
 
@@ -172,7 +201,7 @@ def list_models():
 
 
 @app.post("/detect")
-async def detect_image(file: UploadFile, model: str = None):
+async def detect_image(file: UploadFile, model: str = None, refine_crops: bool = True):
     name, detector = _get_detector(model)
 
     contents = await file.read()
@@ -180,6 +209,8 @@ async def detect_image(file: UploadFile, model: str = None):
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     detections, masks, det_ms = detector.detect(image)
+    if refine_crops and refine.enabled():
+        detections = refine.refine_detections(image, detections)
 
     return {
         "model": name,
@@ -187,6 +218,7 @@ async def detect_image(file: UploadFile, model: str = None):
         "inference_ms": round(det_ms, 1),
         "image_size": [image.shape[1], image.shape[0]],
         "segmentation": masks is not None,
+        "refined": bool(refine_crops and refine.enabled()),
     }
 
 
@@ -305,9 +337,14 @@ def video_stream(model: str = None):
     if _video_player is None or not _video_player.active:
         raise HTTPException(status_code=404, detail="No video playing")
     name, _ = _get_detector(model)
+    gen = _video_generation
 
     def generate():
-        while _video_player and _video_player.active:
+        while (
+            gen == _video_generation
+            and _video_player is not None
+            and _video_player.active
+        ):
             frame = _video_player.get_frame()
             if frame is None:
                 time.sleep(0.1)
@@ -340,6 +377,24 @@ def video_status():
     }
 
 
+@app.get("/detections")
+def current_detections(model: str = None):
+    """Latest detections for live camera or uploaded video (for Shepherd brief)."""
+    name, _ = _get_detector(model)
+    with _video_lock:
+        video_dets = list(_video_detections.get(name, []))
+    dets = video_dets if video_dets else list(_model_detections.get(name, []))
+    slim = [
+        {
+            "class_name": d.get("class_name"),
+            "confidence": d.get("confidence"),
+            **({"detector_class": d["detector_class"]} if d.get("detector_class") else {}),
+        }
+        for d in (dets or [])[:20]
+    ]
+    return {"model": name, "detections": slim, "source": "video" if video_dets else "live"}
+
+
 @app.delete("/video")
 def delete_video():
     _stop_video()
@@ -347,13 +402,33 @@ def delete_video():
 
 
 @app.post("/detect/annotate")
-async def detect_annotate(file: UploadFile, model: str = None):
+async def detect_annotate(file: UploadFile, model: str = None, refine_crops: bool = True):
     name, detector = _get_detector(model)
     contents = await file.read()
     image = np.array(Image.open(io.BytesIO(contents)).convert("RGB"))
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     detections, masks, _ = detector.detect(image)
+    if refine_crops and refine.enabled():
+        detections = refine.refine_detections(image, detections)
     if detections:
         image = draw_detections(image, detections, masks)
     _, jpeg = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 90])
-    return StreamingResponse(io.BytesIO(jpeg.tobytes()), media_type="image/jpeg")
+    # Compact inventory for CC → Shepherd brief (avoid a second detect+CLIP pass)
+    slim = [
+        {
+            "class_name": d.get("class_name"),
+            "confidence": d.get("confidence"),
+            **({"detector_class": d["detector_class"]} if d.get("detector_class") else {}),
+        }
+        for d in (detections or [])[:20]
+    ]
+    det_hdr = json.dumps(slim, separators=(",", ":"), ensure_ascii=True)
+    return StreamingResponse(
+        io.BytesIO(jpeg.tobytes()),
+        media_type="image/jpeg",
+        headers={
+            "X-Detections": det_hdr,
+            "X-Detection-Model": name,
+            "Access-Control-Expose-Headers": "X-Detections, X-Detection-Model",
+        },
+    )

@@ -52,7 +52,7 @@ spec:
       serviceAccountName: command-center
       containers:
         - name: web
-          image: quay.apps.snuc.kubernetes.day/visionai/command-center:latest
+          image: quay.apps.snuc-openshift.demo.local/visionai/command-center:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

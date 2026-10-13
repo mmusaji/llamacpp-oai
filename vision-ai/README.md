@@ -26,14 +26,14 @@ Real-time object detection and instance segmentation pipeline for OpenShift AI. 
 
 Custom KServe ServingRuntime with ONNX Runtime + ROCm for AMD GPU inference.
 
-- **Image**: `quay.apps.snuc.kubernetes.day/visionai/visionai:latest`
+- **Image**: `quay.apps.snuc-openshift.demo.local/visionai/visionai:latest`
 - **Runtime**: ONNX Runtime with `ROCMExecutionProvider` (ROCm 6.4)
 
 ### ServingRuntime - CPU (`serve.py`)
 
 CPU-only KServe ServingRuntime with ONNX Runtime.
 
-- **Image**: `quay.apps.snuc.kubernetes.day/visionai/visionai:cpu`
+- **Image**: `quay.apps.snuc-openshift.demo.local/visionai/visionai:cpu`
 - **Runtime**: ONNX Runtime with `CPUExecutionProvider`
 
 ### Vision AI App (`app/`)

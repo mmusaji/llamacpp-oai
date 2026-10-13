@@ -26,15 +26,24 @@ class KServeDetector:
                  input_size: tuple[int, int] = (640, 640),
                  conf_threshold: float = 0.25,
                  excluded_classes: set[str] | None = None,
-                 token: str | None = None):
+                 token: str | None = None,
+                 class_names: list[str] | None = None,
+                 iou_threshold: float = 0.45):
         self.inference_url = inference_url.rstrip("/")
         self.model_name = model_name
         self.input_size = input_size
         self.conf_threshold = conf_threshold
+        self.iou_threshold = iou_threshold
         self.excluded_classes = excluded_classes or set()
+        self.class_names = class_names if class_names else COCO_CLASSES
         self.token = token
         self._client = grpcclient.InferenceServerClient(url=inference_url)
         self._has_seg = None
+
+    def _label(self, cid: int) -> str:
+        if 0 <= cid < len(self.class_names):
+            return self.class_names[cid]
+        return str(cid)
 
     def preprocess(self, image: np.ndarray) -> tuple[np.ndarray, tuple[int, int]]:
         orig_h, orig_w = image.shape[:2]
@@ -43,12 +52,39 @@ class KServeDetector:
         blob = blob.transpose(2, 0, 1)[np.newaxis]
         return blob, (orig_w, orig_h)
 
-    def postprocess(self, outputs: dict, orig_size: tuple[int, int]) -> tuple[list[dict], list[np.ndarray] | None]:
+    def _pack_detections(
+        self,
+        boxes_xyxy: np.ndarray,
+        scores: np.ndarray,
+        class_ids: np.ndarray,
+        seg_masks: list[np.ndarray] | None = None,
+    ) -> tuple[list[dict], list[np.ndarray] | None]:
+        detections = []
+        keep_indices = []
+        for i in range(len(boxes_xyxy)):
+            cid = int(class_ids[i])
+            name = self._label(cid)
+            if self.excluded_classes and name in self.excluded_classes:
+                continue
+            keep_indices.append(i)
+            detections.append({
+                "class_id": cid,
+                "class_name": name,
+                "confidence": round(float(scores[i]), 4),
+                "bbox": [round(float(v), 1) for v in boxes_xyxy[i]],
+            })
+        if seg_masks is not None:
+            seg_masks = [seg_masks[i] for i in keep_indices]
+        detections.sort(key=lambda d: d["confidence"], reverse=True)
+        return detections, seg_masks
+
+    def _postprocess_e2e(
+        self, output: np.ndarray, protos, orig_size: tuple[int, int]
+    ) -> tuple[list[dict], list[np.ndarray] | None]:
+        """Ultralytics end-to-end layout: (N, 6+) = xyxy, score, class[, mask coeffs]."""
         orig_w, orig_h = orig_size
         inp_w, inp_h = self.input_size
-
-        output = outputs["output0"].squeeze(0)
-        has_seg = "output1" in outputs and output.shape[-1] > 6
+        has_seg = protos is not None and output.ndim >= 2 and output.shape[-1] > 6
 
         scores = output[:, 4]
         class_ids = output[:, 5].astype(int)
@@ -71,13 +107,12 @@ class KServeDetector:
         y2 = boxes[:, 3] * orig_h / inp_h
         boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1)
 
-        # Compute segmentation masks
         seg_masks = None
         if has_seg and mask_coeffs is not None:
-            protos = outputs["output1"].squeeze(0)  # [32, 160, 160]
-            raw_masks = mask_coeffs @ protos.reshape(protos.shape[0], -1)  # [N, 160*160]
-            raw_masks = 1.0 / (1.0 + np.exp(-raw_masks))  # sigmoid
-            raw_masks = raw_masks.reshape(-1, protos.shape[1], protos.shape[2])  # [N, 160, 160]
+            protos = protos.squeeze(0)
+            raw_masks = mask_coeffs @ protos.reshape(protos.shape[0], -1)
+            raw_masks = 1.0 / (1.0 + np.exp(-raw_masks))
+            raw_masks = raw_masks.reshape(-1, protos.shape[1], protos.shape[2])
 
             seg_masks = []
             for i in range(len(raw_masks)):
@@ -87,26 +122,78 @@ class KServeDetector:
                 cropped[by1:by2, bx1:bx2] = (m[by1:by2, bx1:bx2] > 0.5).astype(np.uint8)
                 seg_masks.append(cropped)
 
-        detections = []
-        keep_indices = []
-        for i in range(len(boxes_xyxy)):
-            cid = int(class_ids[i])
-            name = COCO_CLASSES[cid] if cid < len(COCO_CLASSES) else str(cid)
-            if self.excluded_classes and name in self.excluded_classes:
-                continue
-            keep_indices.append(i)
-            detections.append({
-                "class_id": cid,
-                "class_name": name,
-                "confidence": round(float(scores[i]), 4),
-                "bbox": [round(float(v), 1) for v in boxes_xyxy[i]],
-            })
+        return self._pack_detections(boxes_xyxy, scores, class_ids, seg_masks)
 
-        if seg_masks is not None:
-            seg_masks = [seg_masks[i] for i in keep_indices]
+    def _postprocess_raw(
+        self, output: np.ndarray, orig_size: tuple[int, int]
+    ) -> tuple[list[dict], list[np.ndarray] | None]:
+        """Classic YOLO ONNX: (4+nc, N) or (N, 4+nc) — xywh + class scores, no NMS."""
+        orig_w, orig_h = orig_size
+        inp_w, inp_h = self.input_size
 
-        detections.sort(key=lambda d: d["confidence"], reverse=True)
-        return detections, seg_masks
+        pred = output.squeeze() if output.ndim == 3 else output
+        if pred.ndim != 2:
+            return [], None
+        # Prefer (C, N) when one dim looks like channels (4+nc)
+        if pred.shape[0] < pred.shape[1]:
+            # (4+nc, N)
+            boxes_xywh = pred[:4].T
+            cls_scores = pred[4:].T
+        else:
+            # (N, 4+nc)
+            boxes_xywh = pred[:, :4]
+            cls_scores = pred[:, 4:]
+
+        if cls_scores.size == 0:
+            return [], None
+
+        scores = cls_scores.max(axis=1)
+        class_ids = cls_scores.argmax(axis=1).astype(int)
+        conf_mask = scores > self.conf_threshold
+        boxes_xywh = boxes_xywh[conf_mask]
+        scores = scores[conf_mask]
+        class_ids = class_ids[conf_mask]
+
+        if len(boxes_xywh) == 0:
+            return [], None
+
+        cx, cy, bw, bh = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
+        x1 = (cx - bw / 2) * orig_w / inp_w
+        y1 = (cy - bh / 2) * orig_h / inp_h
+        x2 = (cx + bw / 2) * orig_w / inp_w
+        y2 = (cy + bh / 2) * orig_h / inp_h
+        boxes_xyxy = np.stack([x1, y1, x2, y2], axis=1)
+
+        # NMS (OpenCV expects list of boxes / scores)
+        indices = cv2.dnn.NMSBoxes(
+            boxes_xyxy.tolist(),
+            scores.tolist(),
+            self.conf_threshold,
+            self.iou_threshold,
+        )
+        if len(indices) == 0:
+            return [], None
+        flat = np.array(indices).reshape(-1)
+        return self._pack_detections(
+            boxes_xyxy[flat], scores[flat], class_ids[flat], None
+        )
+
+    def postprocess(self, outputs: dict, orig_size: tuple[int, int]) -> tuple[list[dict], list[np.ndarray] | None]:
+        output = outputs["output0"]
+        while output.ndim > 2 and output.shape[0] == 1:
+            output = output.squeeze(0)
+        protos = outputs.get("output1")
+
+        # E2E / NMS-baked: last dim is 6 (xyxy, score, cls) or >6 with mask coeffs
+        if output.ndim == 2 and output.shape[-1] >= 6 and output.shape[-1] <= 6 + 32:
+            # Heuristic: e2e rows are few (≤300); raw is usually (4+nc, 8400)
+            if output.shape[0] <= 300 or output.shape[-1] == 6 or (
+                output.shape[-1] > 6 and output.shape[0] <= 300
+            ):
+                return self._postprocess_e2e(output, protos, orig_size)
+
+        # Raw YOLO-World / detect export: (4+nc, N) with nc typically small for military
+        return self._postprocess_raw(output, orig_size)
 
     def detect(self, image: np.ndarray) -> tuple[list[dict], list[np.ndarray] | None, float]:
         blob, orig_size = self.preprocess(image)
@@ -141,10 +228,15 @@ class KServeDetector:
         output_dict = {"output0": result.as_numpy("output0")}
         if self._has_seg is not False:
             try:
-                output_dict["output1"] = result.as_numpy("output1")
-                self._has_seg = True
+                o1 = result.as_numpy("output1")
+                if o1 is not None:
+                    output_dict["output1"] = o1
+                    self._has_seg = True
+                else:
+                    self._has_seg = False
             except Exception:
                 self._has_seg = False
+
 
         detections, masks = self.postprocess(output_dict, orig_size)
         return detections, masks, inference_ms
@@ -167,6 +259,11 @@ def draw_detections(image: np.ndarray, detections: list[dict],
                     masks: list[np.ndarray] | None = None) -> np.ndarray:
     annotated = image.copy()
     overlay = annotated.copy()
+    # Scale stroke/font with image size so boxes stay readable in Command Center
+    h, w = annotated.shape[:2]
+    thick = max(3, int(round(min(h, w) / 200)))
+    font_scale = max(0.6, min(h, w) / 800)
+    font_thick = max(2, thick - 1)
 
     for i, det in enumerate(detections):
         color = PALETTE[i % len(PALETTE)]
@@ -176,10 +273,14 @@ def draw_detections(image: np.ndarray, detections: list[dict],
 
         x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
         label = f"{det['class_name']} {det['confidence']:.0%}"
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(annotated, (x1, y1 - th - 6), (x1 + tw, y1), color, -1)
-        cv2.putText(annotated, label, (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, thick)
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
+        y_text = max(th + 8, y1)
+        cv2.rectangle(annotated, (x1, y_text - th - 8), (x1 + tw + 4, y_text), color, -1)
+        cv2.putText(
+            annotated, label, (x1 + 2, y_text - 6),
+            cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thick, cv2.LINE_AA,
+        )
 
     if masks:
         cv2.addWeighted(overlay, 0.4, annotated, 0.6, 0, annotated)

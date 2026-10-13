@@ -5,3 +5,5 @@ opencv-python-headless>=4.10.0
 numpy>=1.26.0
 tritonclient[grpc]>=2.42.0
 Pillow>=10.0.0
+# Crop reclassify — torch installed separately in Dockerfile (CPU wheel)
+open-clip-torch

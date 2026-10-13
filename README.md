@@ -155,8 +155,8 @@ video-samples/
 ## CI/CD
 
 Tekton pipelines build each component and restart its deployment; ArgoCD syncs the
-`k8s/` manifests. A shared `github-listener` EventListener in the `visionai` namespace
-routes pushes to the right pipeline by branch.
+`k8s/` manifests. A shared `github-listener` EventListener in the `sovereign-ai-ci`
+namespace routes pushes to the right pipeline by branch.
 
 ## Setting Up From Scratch
 
@@ -178,9 +178,9 @@ before applying anything:
 | What | Current value |
 |---|---|
 | Workload namespace | `sovereign-ai` |
-| Pipeline namespace | `visionai` |
-| Registry host | `registry-quay-app.quay.svc.cluster.local` (in-cluster) and `quay.apps.snuc.kubernetes.day` (route) |
-| Cluster domain | `apps.snuc.kubernetes.day` |
+| Pipeline namespace | `sovereign-ai-ci` |
+| Registry host | `registry-quay-app.quay.svc.cluster.local` (in-cluster) and `quay.apps.snuc-openshift.demo.local` (route) |
+| Cluster domain | `apps.snuc-openshift.demo.local` |
 | Git remote | `github.com/explicitworkload/snuc-openshift-ai` |
 
 > **Credentials are committed in plaintext** in `litellm/litellm-deployment.yaml`

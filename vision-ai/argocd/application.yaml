@@ -6,12 +6,12 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/explicitworkload/snuc-openshift-ai.git
+    repoURL: https://github.com/mmusaji/llamacpp-oai.git
     targetRevision: main
     path: vision-ai/k8s
   destination:
     server: https://kubernetes.default.svc
-    namespace: sovereign-ai-ci
+    namespace: sovereign-ai
   syncPolicy:
     automated:
       prune: true

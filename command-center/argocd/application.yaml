@@ -1,0 +1,27 @@
+# Argo CD Application for Command Center (use from ACM hub GitOps / spoke GitOps).
+# Point ACM at this repo (mmusaji/llamacpp-oai), not upstream explicitworkload.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: command-center
+  namespace: openshift-gitops
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mmusaji/llamacpp-oai.git
+    targetRevision: main
+    path: command-center/k8s
+  destination:
+    # On the SNUC spoke (in-cluster GitOps):
+    server: https://kubernetes.default.svc
+    # On the ACM hub, replace server with:
+    #   name: <managed-cluster-name>   # e.g. snuc-edge-01
+    #   and omit server, or use the cluster's API via registered cluster
+    namespace: sovereign-ai
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true
