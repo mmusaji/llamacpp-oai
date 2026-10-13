@@ -1,0 +1,31 @@
+# Allow OpenShift GitOps (Argo) on the SNUC to sync apps into sovereign-ai.
+# Apply once with cluster-admin if the Application controller is Forbidden;
+# safe to keep in Git so desired RBAC stays declared.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openshift-gitops-argocd-controller-admin
+  namespace: sovereign-ai
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+  - kind: ServiceAccount
+    name: openshift-gitops-argocd-application-controller
+    namespace: openshift-gitops
+---
+# Optional: also let the Argo server UI read/manage (needed for some console actions)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openshift-gitops-argocd-server-admin
+  namespace: sovereign-ai
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+  - kind: ServiceAccount
+    name: openshift-gitops-argocd-server
+    namespace: openshift-gitops

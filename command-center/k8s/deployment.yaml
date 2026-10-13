@@ -52,7 +52,7 @@ spec:
       serviceAccountName: command-center
       containers:
         - name: web
-          image: quay.apps.snuc-openshift.demo.local/visionai/command-center:latest
+          image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/command-center:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

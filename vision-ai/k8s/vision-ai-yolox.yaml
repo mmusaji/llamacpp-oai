@@ -19,7 +19,7 @@ spec:
       serviceAccountName: models-odf-s3-sa
       containers:
         - name: vision-ai-yolox
-          image: quay.apps.snuc-openshift.demo.local/visionai/visionai-app:yolox
+          image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/visionai-app:latest
           imagePullPolicy: Always
           env:
             - name: INFERENCE_ENDPOINTS

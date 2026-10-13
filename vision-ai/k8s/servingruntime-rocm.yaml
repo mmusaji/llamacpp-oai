@@ -22,7 +22,7 @@ spec:
   multiModel: false
   containers:
     - name: kserve-container
-      image: quay.apps.snuc-openshift.demo.local/visionai/visionai:latest
+      image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/visionai:latest
       imagePullPolicy: Always
       args:
         - --model_path=/mnt/models
