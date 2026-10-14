@@ -13,7 +13,7 @@
   <meta name="twitter:description" content="Centralized AI command, control, and coordination. Direct autonomous AI units in real time from a single tactical interface.">
   <meta name="theme-color" content="#00ff41">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="style.css?v=fedora1">
+  <link rel="stylesheet" href="style.css?v=fedora2">
 </head>
 <body>
 
@@ -78,17 +78,17 @@
         <div class="vision-feed" id="vision-feed" style="display:none">
           <div class="vision-stream-container">
             <img id="vision-stream" alt="Vision AI Stream">
+            <!-- Capture-only; never shown as live preview -->
             <video id="fedora-cam" class="fedora-cam" playsinline autoplay muted style="display:none"></video>
             <div class="vision-overlay" id="vision-overlay">
               <div class="vision-status" id="vision-status">CONNECTING TO FEED...</div>
             </div>
-            <div class="fedora-banner" id="fedora-banner">RH FEDORA — CAPTURED</div>
+            <div class="fedora-banner" id="fedora-banner">RH FEDORA — DETECTED</div>
           </div>
-          <div class="fedora-gallery" id="fedora-gallery" style="display:none"></div>
           <div class="vision-bar">
             <div class="vision-bar-left">
               <button class="btn-vision-upload" id="btn-vision-upload" title="Upload image or video">+</button>
-              <button class="btn-fedora-watch" id="btn-fedora-watch" title="Mac webcam → Red Hat fedora detect">FEDORA</button>
+              <button class="btn-fedora-watch" id="btn-fedora-watch" title="Freeze-frame Red Hat fedora detect (webcam)">FEDORA</button>
               <span class="vision-label" id="vision-label">LIVE INFERENCE FEED</span>
             </div>
             <span class="vision-indicator" id="vision-indicator"></span>
@@ -126,6 +126,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=fedora1"></script>
+  <script src="app.js?v=fedora2"></script>
 </body>
 </html>

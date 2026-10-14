@@ -237,14 +237,22 @@ function hideVisionFeed() {
   document.getElementById('chat-input-area').style.display = '';
 }
 
-/* —— Red Hat fedora watch (Mac webcam → CLIP PoC) —— */
+/* —— Red Hat fedora watch: hidden cam → freeze-frame every 5s → show annotated still → discard —— */
+const FEDORA_INTERVAL_MS = 5000;
 let fedoraWatch = {
   on: false,
   stream: null,
   timer: null,
   busy: false,
-  cooldownUntil: 0,
+  lastUrl: null, // object URL for current freeze frame only
 };
+
+function revokeFedoraFrame() {
+  if (fedoraWatch.lastUrl) {
+    URL.revokeObjectURL(fedoraWatch.lastUrl);
+    fedoraWatch.lastUrl = null;
+  }
+}
 
 function stopFedoraWatch() {
   fedoraWatch.on = false;
@@ -256,17 +264,19 @@ function stopFedoraWatch() {
     fedoraWatch.stream.getTracks().forEach((t) => t.stop());
     fedoraWatch.stream = null;
   }
+  revokeFedoraFrame();
   const cam = document.getElementById('fedora-cam');
   const streamImg = document.getElementById('vision-stream');
-  const gallery = document.getElementById('fedora-gallery');
   const btn = document.getElementById('btn-fedora-watch');
   const banner = document.getElementById('fedora-banner');
   if (cam) {
     cam.srcObject = null;
     cam.style.display = 'none';
   }
-  if (streamImg) streamImg.style.display = '';
-  if (gallery) gallery.style.display = 'none';
+  if (streamImg) {
+    streamImg.style.display = '';
+    if (streamImg.src && streamImg.src.startsWith('blob:')) streamImg.removeAttribute('src');
+  }
   if (btn) btn.classList.remove('active');
   if (banner) banner.classList.remove('on');
 }
@@ -278,19 +288,19 @@ async function startFedoraWatch() {
   const status = document.getElementById('vision-status');
   const label = document.getElementById('vision-label');
   const indicator = document.getElementById('vision-indicator');
-  const gallery = document.getElementById('fedora-gallery');
   const btn = document.getElementById('btn-fedora-watch');
 
-  // Pause MJPEG so webcam owns the stage
+  // Stop MJPEG; stage shows freeze frames only (cam stays hidden)
   streamImg.onload = null;
   streamImg.onerror = null;
-  streamImg.src = '';
-  streamImg.style.display = 'none';
+  streamImg.removeAttribute('src');
+  streamImg.style.display = '';
+  cam.style.display = 'none';
 
   overlay.style.display = 'flex';
   status.textContent = 'REQUESTING CAMERA...';
   indicator.className = 'vision-indicator connecting';
-  label.textContent = 'FEDORA WATCH — MAC WEBCAM';
+  label.textContent = 'FEDORA WATCH — FREEZE FRAME 5s';
 
   try {
     fedoraWatch.stream = await navigator.mediaDevices.getUserMedia({
@@ -300,24 +310,25 @@ async function startFedoraWatch() {
   } catch (e) {
     status.textContent = 'CAMERA DENIED / UNAVAILABLE';
     indicator.className = 'vision-indicator offline';
-    streamImg.style.display = '';
     applyVisionState(activeModel);
     return;
   }
 
   cam.srcObject = fedoraWatch.stream;
-  cam.style.display = '';
   await cam.play().catch(() => {});
-  overlay.style.display = 'none';
-  indicator.className = 'vision-indicator live';
-  gallery.style.display = 'flex';
   btn.classList.add('active');
   fedoraWatch.on = true;
-  setVisionBrief('Scanning for Red Hat fedora… auto-capture on hit.');
+  setVisionBrief('Freeze-frame every 5s — annotated still shown, then discarded. No local save.');
 
   if (fedoraWatch.timer) clearInterval(fedoraWatch.timer);
-  fedoraWatch.timer = setInterval(() => { scanFedoraFrame(); }, 2500);
-  scanFedoraFrame();
+  // First frame ASAP once video has dimensions
+  const kick = () => {
+    if (!fedoraWatch.on) return;
+    if (cam.videoWidth) scanFedoraFrame();
+    else setTimeout(kick, 200);
+  };
+  kick();
+  fedoraWatch.timer = setInterval(() => { scanFedoraFrame(); }, FEDORA_INTERVAL_MS);
 }
 
 async function toggleFedoraWatch() {
@@ -330,88 +341,105 @@ async function toggleFedoraWatch() {
   await startFedoraWatch();
 }
 
+function fedoraDetectionsFromSummary(summary) {
+  const persons = summary.persons || [];
+  const wearers = persons.filter((p) => p.wearing_red_hat);
+  if (wearers.length) {
+    return wearers.map((p) => ({
+      class_name: 'red_hat_fedora',
+      confidence: p.top_prob || p.pos_mass || 0.5,
+    }));
+  }
+  return persons.map((p) => ({
+    class_name: p.top_label || p.detector_class || 'person',
+    confidence: p.top_prob || p.person_confidence || 0,
+  }));
+}
+
+async function postFedoraAnnotate(fileOrBlob, filename = 'frame.jpg') {
+  const fd = new FormData();
+  fd.append('file', fileOrBlob, filename);
+  const model = encodeURIComponent(activeModel || '');
+  const res = await fetch(
+    `${API}/api/vision/detect/redhat?annotate=true&model=${model}`,
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd },
+  );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(t.slice(0, 200) || `HTTP ${res.status}`);
+  }
+  const hits = Number(res.headers.get('X-RedHat-Hits') || '0');
+  const capture = res.headers.get('X-Should-Capture') === '1';
+  let summary = {};
+  try { summary = JSON.parse(res.headers.get('X-RedHat-Json') || '{}'); } catch (_) {}
+  const jpeg = await res.blob();
+  return { hits, capture, summary, jpeg };
+}
+
 async function scanFedoraFrame() {
   if (!fedoraWatch.on || fedoraWatch.busy) return;
-  if (Date.now() < fedoraWatch.cooldownUntil) return;
   const cam = document.getElementById('fedora-cam');
   if (!cam || !cam.videoWidth) return;
 
+  const overlay = document.getElementById('vision-overlay');
+  const status = document.getElementById('vision-status');
+  const indicator = document.getElementById('vision-indicator');
+  const streamImg = document.getElementById('vision-stream');
+  const label = document.getElementById('vision-label');
+
   fedoraWatch.busy = true;
+  overlay.style.display = 'flex';
+  status.textContent = 'CAPTURING FRAME...';
+  indicator.className = 'vision-indicator connecting';
+  label.textContent = 'FEDORA WATCH — ANALYZING';
+
+  let blob = null;
   try {
     const canvas = document.createElement('canvas');
     canvas.width = cam.videoWidth;
     canvas.height = cam.videoHeight;
     canvas.getContext('2d').drawImage(cam, 0, 0);
-    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.85));
-    if (!blob) return;
+    blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('empty frame');
 
-    const fd = new FormData();
-    fd.append('file', blob, 'frame.jpg');
-    const model = encodeURIComponent(activeModel || '');
-    const res = await fetch(
-      `${API}/api/vision/detect/redhat?annotate=true&model=${model}`,
-      { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd },
-    );
-    if (!res.ok) {
-      const t = await res.text();
-      setVisionBrief(`Fedora scan error: ${t.slice(0, 160)}`);
-      return;
-    }
+    status.textContent = 'FEDORA INFERENCE...';
+    const { hits, capture, summary, jpeg } = await postFedoraAnnotate(blob, 'frame.jpg');
+    blob = null; // drop capture buffer
 
-    const hits = Number(res.headers.get('X-RedHat-Hits') || '0');
-    const capture = res.headers.get('X-Should-Capture') === '1';
-    let summary = {};
-    try { summary = JSON.parse(res.headers.get('X-RedHat-Json') || '{}'); } catch (_) {}
-
-    const jpeg = await res.blob();
     const url = URL.createObjectURL(jpeg);
-    // Show last annotated still briefly over the live cam
-    const streamImg = document.getElementById('vision-stream');
+    revokeFedoraFrame();
+    fedoraWatch.lastUrl = url;
     streamImg.style.display = '';
     streamImg.src = url;
-    setTimeout(() => {
-      if (!fedoraWatch.on) return;
-      streamImg.style.display = 'none';
-    }, 900);
+    overlay.style.display = 'none';
+    indicator.className = 'vision-indicator live';
+    label.textContent = capture
+      ? 'FEDORA WATCH — HIT (NEXT FRAME 5s)'
+      : 'FEDORA WATCH — FREEZE FRAME (NEXT 5s)';
 
     const wearers = (summary.persons || []).filter((p) => p.wearing_red_hat);
-    if (!capture) {
+    if (capture) {
+      const banner = document.getElementById('fedora-banner');
+      banner.classList.add('on');
+      setTimeout(() => banner.classList.remove('on'), 2000);
+      setVisionBrief(`RH fedora detected (${hits}). Next freeze frame in 5s…`);
+      try {
+        const brief = await requestVisionBrief(fedoraDetectionsFromSummary(summary));
+        if (fedoraWatch.on) setVisionBrief(brief.brief || `RH fedora detected (${hits}).`);
+      } catch (_) { /* brief optional */ }
+    } else {
       setVisionBrief(
         wearers.length
-          ? `RH fedora candidates: ${wearers.length}`
-          : `No RH fedora (${summary.persons?.length || 0} person(s) scored)`,
+          ? `Scored ${summary.persons?.length || 0} person(s) — no RH fedora. Next frame in 5s.`
+          : `No RH fedora (${summary.persons?.length || 0} person(s)). Next frame in 5s.`,
       );
-      return;
-    }
-
-    const banner = document.getElementById('fedora-banner');
-    banner.classList.add('on');
-    setTimeout(() => banner.classList.remove('on'), 1600);
-
-    const gallery = document.getElementById('fedora-gallery');
-    const img = document.createElement('img');
-    img.src = url;
-    img.title = new Date().toLocaleTimeString();
-    img.alt = 'RH fedora capture';
-    gallery.prepend(img);
-    while (gallery.children.length > 12) gallery.removeChild(gallery.lastChild);
-
-    fedoraWatch.cooldownUntil = Date.now() + 4000;
-
-    const dets = wearers.map((p) => ({
-      class_name: 'red_hat_fedora',
-      confidence: p.top_prob || p.pos_mass || 0.5,
-    }));
-    setVisionBrief(`CAPTURE — ${hits} RH fedora hit(s). Briefing…`);
-    try {
-      const brief = await requestVisionBrief(dets);
-      setVisionBrief(brief.brief || `CAPTURE — ${hits} RH fedora.`);
-    } catch (_) {
-      setVisionBrief(`CAPTURE — ${hits} RH fedora hit(s).`);
     }
   } catch (e) {
     setVisionBrief(`Fedora scan failed: ${e.message || e}`);
+    status.textContent = 'FRAME FAILED — RETRYING';
+    indicator.className = 'vision-indicator offline';
   } finally {
+    blob = null;
     fedoraWatch.busy = false;
   }
 }
@@ -707,23 +735,60 @@ async function handleVisionImageUpload(file) {
   const overlay = document.getElementById('vision-overlay');
   const status = document.getElementById('vision-status');
   const indicator = document.getElementById('vision-indicator');
+  const label = document.getElementById('vision-label');
   const viewActive = () => activeModel === channel;
   const state = ensureVisionState(channel);
   const gen = bumpBriefGen(state);
+  const useFedora = fedoraWatch.on;
 
   if (viewActive()) {
     overlay.style.display = 'flex';
-    status.textContent = 'PROCESSING UPLOAD...';
+    status.textContent = useFedora ? 'FEDORA UPLOAD...' : 'PROCESSING UPLOAD...';
     indicator.className = 'vision-indicator connecting';
     setVisionBrief('');
   }
 
-  const fd = new FormData();
-  fd.append('file', file);
-
-  let detectUrl = `${API}/api/vision/detect/annotate?model=${encodeURIComponent(channel)}`;
+  // Pause freeze-frame loop while upload runs
+  if (useFedora) fedoraWatch.busy = true;
 
   try {
+    if (useFedora) {
+      const { hits, capture, summary, jpeg } = await postFedoraAnnotate(file, file.name || 'upload.jpg');
+      if (state.briefGen !== gen) return;
+
+      const url = URL.createObjectURL(jpeg);
+      revokeFedoraFrame();
+      fedoraWatch.lastUrl = url;
+      const streamImg = document.getElementById('vision-stream');
+      streamImg.style.display = '';
+      streamImg.src = url;
+      // Stay in fedora watch — do not flip to generic image mode / YOLO annotate
+      if (viewActive()) {
+        overlay.style.display = 'none';
+        indicator.className = 'vision-indicator live';
+        label.textContent = capture
+          ? 'FEDORA UPLOAD — HIT'
+          : 'FEDORA UPLOAD — NO HIT';
+        if (capture) {
+          const banner = document.getElementById('fedora-banner');
+          banner.classList.add('on');
+          setTimeout(() => banner.classList.remove('on'), 2000);
+        }
+      }
+      const detections = fedoraDetectionsFromSummary(summary);
+      if (!detections.length && hits === 0) {
+        await applyBriefResult(channel, gen, 'No RH fedora in upload.', { hideOverlay: true });
+      } else {
+        await runShepherdBrief(channel, gen, detections.length ? detections : [
+          { class_name: capture ? 'red_hat_fedora' : 'person', confidence: capture ? 0.9 : 0.5 },
+        ]);
+      }
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('file', file);
+    const detectUrl = `${API}/api/vision/detect/annotate?model=${encodeURIComponent(channel)}`;
     const res = await fetch(detectUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -756,7 +821,6 @@ async function handleVisionImageUpload(file) {
       overlay.style.display = 'flex';
     }
 
-    // Header may be stripped by a proxy — fall back to JSON detect for images
     if (!detections.length) {
       try {
         detections = await detectJsonFallback(file, channel);
@@ -775,6 +839,8 @@ async function handleVisionImageUpload(file) {
       status.textContent = 'UPLOAD FAILED: ' + (err.message || 'Unknown error');
       indicator.className = 'vision-indicator offline';
     }
+  } finally {
+    if (useFedora) fedoraWatch.busy = false;
   }
 }
 

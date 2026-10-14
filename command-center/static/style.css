@@ -750,25 +750,6 @@ body::after {
   display: block;
 }
 
-.fedora-gallery {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-  max-height: 88px;
-}
-
-.fedora-gallery img {
-  height: 72px;
-  width: auto;
-  object-fit: cover;
-  border: 2px solid var(--red);
-  flex-shrink: 0;
-}
-
 .vision-overlay {
   position: absolute;
   top: 0; left: 0;
