@@ -52,8 +52,9 @@ spec:
       serviceAccountName: command-center
       containers:
         - name: web
-          image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/command-center:mission-v2
-          imagePullPolicy: Always
+          # mission-v2 (fedora watch) — pin digest so Git/Argo match the registry bit-for-bit
+          image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/command-center@sha256:9b1502f3d24bec3f76d3295211cd2849f01b612f4e40dc079aac6703058df0a6
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           env:
