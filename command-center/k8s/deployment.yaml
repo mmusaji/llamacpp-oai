@@ -39,7 +39,6 @@ metadata:
   namespace: sovereign-ai
   labels:
     app: command-center
-    mission.package: mission-v2
 spec:
   replicas: 1
   selector:
@@ -49,12 +48,11 @@ spec:
     metadata:
       labels:
         app: command-center
-        mission.package: mission-v2
     spec:
       serviceAccountName: command-center
       containers:
         - name: web
-          image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/command-center:mission-v2
+          image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/command-center:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -65,8 +63,6 @@ spec:
               value: "sovereign-ai"
             - name: VISION_AI_URL
               value: http://vision-ai-yolox.sovereign-ai.svc.cluster.local:8080
-            - name: MISSION_PACKAGE
-              value: "mission-v2"
           resources:
             requests:
               cpu: "100m"
