@@ -1,0 +1,36 @@
+# Optional second Application — "turn on" mission-v2 (fedora watch image) from ACM/GitOps.
+# Default spoke app stays on main → :mission-v1. Point this at tag/branch mission-v2.
+#
+# ACM pattern (hub):
+#   1. Keep ApplicationSet / Placement for command-center → targetRevision: main
+#   2. When the edge should get the new mission package, create/enable a Placement
+#      that selects the spoke + an Application (or AppSet generator entry) using
+#      this manifest (targetRevision: mission-v2).
+#   3. Do not run both Applications against the same Deployment name unless one
+#      is disabled — they both manage command-center/k8s in sovereign-ai.
+#
+# Switch demo: disable/remove the v1 Application binding, sync this one (or flip
+# a single AppSet's targetRevision from main → mission-v2).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: command-center-mission-v2
+  namespace: openshift-gitops
+  labels:
+    mission: v2
+    demo: fedora-watch
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mmusaji/llamacpp-oai.git
+    # Annotated tag + branch of the same name — both point at the fedora package.
+    targetRevision: mission-v2
+    path: command-center/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sovereign-ai
+  syncPolicy:
+    # Manual by default so ACM "placement on" is an explicit sync beat.
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true
