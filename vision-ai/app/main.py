@@ -16,6 +16,7 @@ from app.detector import KServeDetector, draw_detections
 from app.camera import RTSPCamera
 from app.video import VideoPlayer
 from app import refine
+from app import redhat
 
 MODEL_NAME = os.getenv("MODEL_NAME", "model")
 RTSP_URL = os.getenv("RTSP_URL", "rtsp://172.16.199.110/stream1")
@@ -164,6 +165,11 @@ async def lifespan(app: FastAPI):
         print(f"crop refine: {'ready' if ok else 'disabled/unavailable'}", flush=True)
     except Exception as e:
         print(f"crop refine warmup failed: {e}", flush=True)
+    try:
+        ok = redhat.warmup()
+        print(f"redhat CLIP: {'ready' if ok else 'disabled/unavailable'}", flush=True)
+    except Exception as e:
+        print(f"redhat CLIP warmup failed: {e}", flush=True)
 
     yield
 
@@ -192,6 +198,7 @@ def health():
         "inference_running": _inference_running,
         "models": list(_detectors.keys()),
         "refine_crops": refine.enabled(),
+        "redhat_detect": redhat.enabled(),
     }
 
 
@@ -399,6 +406,45 @@ def current_detections(model: str = None):
 def delete_video():
     _stop_video()
     return {"status": "stopped"}
+
+
+@app.post("/detect/redhat")
+async def detect_redhat(file: UploadFile, model: str = None, annotate: bool = False):
+    """PoC: YOLO person boxes → CLIP 'wearing red hat/fedora' → capture flag.
+
+    Returns JSON. Set annotate=true for a JPEG with boxes (X-RedHat-Hits header).
+    """
+    name, detector = _get_detector(model)
+    contents = await file.read()
+    image = np.array(Image.open(io.BytesIO(contents)).convert("RGB"))
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+    detections, _, det_ms = detector.detect(image)
+    scan = redhat.scan_persons(image, detections)
+
+    payload = {
+        "model": name,
+        "inference_ms": round(det_ms, 1),
+        "image_size": [image.shape[1], image.shape[0]],
+        "detections_total": len(detections),
+        **scan,
+    }
+
+    if not annotate:
+        return payload
+
+    drawn = redhat.annotate(image, scan.get("persons") or [])
+    _, jpeg = cv2.imencode(".jpg", drawn, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    return StreamingResponse(
+        io.BytesIO(jpeg.tobytes()),
+        media_type="image/jpeg",
+        headers={
+            "X-RedHat-Hits": str(scan.get("redhat_hits", 0)),
+            "X-Should-Capture": "1" if scan.get("should_capture") else "0",
+            "X-RedHat-Json": json.dumps(payload, separators=(",", ":"), ensure_ascii=True),
+            "Access-Control-Expose-Headers": "X-RedHat-Hits, X-Should-Capture, X-RedHat-Json",
+        },
+    )
 
 
 @app.post("/detect/annotate")

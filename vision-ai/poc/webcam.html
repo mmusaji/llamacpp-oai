@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Red Hat PoC — Mac webcam</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --fg: #f0f0f0;
+      --muted: #9a9a9a;
+      --accent: #ee0000;
+      --ok: #3ecf8e;
+      --panel: #252525;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Red Hat Display", "Helvetica Neue", sans-serif;
+      background: var(--bg); color: var(--fg);
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+    header {
+      padding: 1rem 1.25rem; border-bottom: 1px solid #333;
+      display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap;
+    }
+    header h1 { margin: 0; font-size: 1.15rem; letter-spacing: 0.02em; }
+    header span { color: var(--muted); font-size: 0.85rem; }
+    main {
+      flex: 1; display: grid; grid-template-columns: 1.2fr 1fr; gap: 1rem;
+      padding: 1rem; max-width: 1200px; width: 100%; margin: 0 auto;
+    }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    .stage, .side { background: var(--panel); border-radius: 4px; padding: 0.75rem; }
+    video, img.shot {
+      width: 100%; background: #000; aspect-ratio: 4/3; object-fit: cover;
+      border-radius: 2px;
+    }
+    .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; align-items: center; }
+    label { font-size: 0.8rem; color: var(--muted); display: flex; gap: 0.35rem; align-items: center; }
+    input[type="text"], input[type="number"] {
+      background: #111; border: 1px solid #444; color: var(--fg);
+      padding: 0.35rem 0.5rem; border-radius: 2px; min-width: 14rem;
+    }
+    button {
+      background: var(--accent); color: #fff; border: 0; padding: 0.45rem 0.9rem;
+      border-radius: 2px; cursor: pointer; font-weight: 600;
+    }
+    button.secondary { background: #444; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      margin-top: 0.75rem; font-family: ui-monospace, monospace; font-size: 0.8rem;
+      white-space: pre-wrap; color: var(--muted); max-height: 12rem; overflow: auto;
+    }
+    .status.hit { color: var(--ok); }
+    .gallery {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 0.5rem; margin-top: 0.75rem;
+    }
+    .gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border: 2px solid transparent; }
+    .gallery img.hit { border-color: var(--accent); }
+    .banner {
+      display: none; margin-top: 0.5rem; padding: 0.5rem 0.75rem;
+      background: var(--accent); color: #fff; font-weight: 700; letter-spacing: 0.04em;
+    }
+    .banner.on { display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Red Hat detect PoC</h1>
+    <span>Mac webcam → YOLO person → CLIP red hat → auto-capture</span>
+  </header>
+  <main>
+    <section class="stage">
+      <video id="cam" playsinline autoplay muted></video>
+      <div class="banner" id="banner">RED HAT — CAPTURED</div>
+      <div class="controls">
+        <button id="btn-start">Start camera</button>
+        <button id="btn-scan" class="secondary" disabled>Scan once</button>
+        <label><input type="checkbox" id="auto" checked /> Auto every
+          <input type="number" id="interval" value="2.5" min="1" max="30" step="0.5" style="min-width:4rem" /> s
+        </label>
+      </div>
+      <div class="controls">
+        <label>API base
+          <input type="text" id="api" value="http://127.0.0.1:8080" title="vision-ai root, or CC origin + path" />
+        </label>
+        <label>Token (if CC)
+          <input type="text" id="token" placeholder="Bearer optional" style="min-width:10rem" />
+        </label>
+        <label>Path
+          <input type="text" id="path" value="/detect/redhat" style="min-width:10rem" />
+        </label>
+      </div>
+      <div class="status" id="status">Idle. Point camera at someone in a red fedora / Red Hat.</div>
+    </section>
+    <section class="side">
+      <div>Last annotated</div>
+      <img class="shot" id="last" alt="last result" />
+      <div>Captures</div>
+      <div class="gallery" id="gallery"></div>
+    </section>
+  </main>
+  <script>
+    const cam = document.getElementById("cam");
+    const status = document.getElementById("status");
+    const last = document.getElementById("last");
+    const gallery = document.getElementById("gallery");
+    const banner = document.getElementById("banner");
+    const btnStart = document.getElementById("btn-start");
+    const btnScan = document.getElementById("btn-scan");
+    let timer = null;
+    let busy = false;
+    let cooldownUntil = 0;
+
+    function apiUrl() {
+      const base = document.getElementById("api").value.replace(/\/$/, "");
+      const path = document.getElementById("path").value;
+      return base + path + (path.includes("?") ? "&" : "?") + "annotate=true";
+    }
+
+    async function startCam() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      cam.srcObject = stream;
+      btnScan.disabled = false;
+      status.textContent = "Camera on. Scanning…";
+      schedule();
+    }
+
+    function schedule() {
+      if (timer) clearInterval(timer);
+      if (!document.getElementById("auto").checked) return;
+      const sec = Math.max(1, Number(document.getElementById("interval").value) || 2.5);
+      timer = setInterval(() => { scan(); }, sec * 1000);
+    }
+
+    async function scan() {
+      if (busy || !cam.srcObject) return;
+      if (Date.now() < cooldownUntil) return;
+      busy = true;
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = cam.videoWidth || 640;
+        canvas.height = cam.videoHeight || 480;
+        canvas.getContext("2d").drawImage(cam, 0, 0);
+        const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.85));
+        const fd = new FormData();
+        fd.append("file", blob, "frame.jpg");
+
+        const headers = {};
+        const tok = document.getElementById("token").value.trim();
+        if (tok) headers["Authorization"] = tok.startsWith("Bearer ") ? tok : `Bearer ${tok}`;
+
+        const res = await fetch(apiUrl(), { method: "POST", body: fd, headers });
+        if (!res.ok) throw new Error(await res.text());
+
+        const hits = Number(res.headers.get("X-RedHat-Hits") || "0");
+        const capture = res.headers.get("X-Should-Capture") === "1";
+        let summary = {};
+        try { summary = JSON.parse(res.headers.get("X-RedHat-Json") || "{}"); } catch (_) {}
+
+        const jpeg = await res.blob();
+        const url = URL.createObjectURL(jpeg);
+        last.src = url;
+
+        status.className = "status" + (capture ? " hit" : "");
+        status.textContent = JSON.stringify({
+          should_capture: capture,
+          redhat_hits: hits,
+          persons: (summary.persons || []).map((p) => ({
+            top: p.top_label, p: p.top_prob, wear: p.wearing_red_hat,
+          })),
+          ms: summary.ms,
+        }, null, 2);
+
+        if (capture) {
+          banner.classList.add("on");
+          const img = document.createElement("img");
+          img.src = url;
+          img.className = "hit";
+          img.title = new Date().toLocaleTimeString();
+          gallery.prepend(img);
+          cooldownUntil = Date.now() + 4000; // avoid burst captures
+          setTimeout(() => banner.classList.remove("on"), 1500);
+        }
+      } catch (e) {
+        status.className = "status";
+        status.textContent = "Error: " + e.message;
+      } finally {
+        busy = false;
+      }
+    }
+
+    btnStart.addEventListener("click", () => startCam().catch((e) => {
+      status.textContent = "Camera error: " + e.message;
+    }));
+    btnScan.addEventListener("click", () => scan());
+    document.getElementById("auto").addEventListener("change", schedule);
+    document.getElementById("interval").addEventListener("change", schedule);
+  </script>
+</body>
+</html>

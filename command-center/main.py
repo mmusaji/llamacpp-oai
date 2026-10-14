@@ -437,6 +437,52 @@ async def vision_detect(request: Request, model: str = None):
         return resp.json()
 
 
+@app.post("/api/vision/detect/redhat", dependencies=[Depends(verify_token)])
+async def vision_detect_redhat(request: Request, model: str = None, annotate: bool = False):
+    """PoC proxy: person boxes → CLIP red-hat score → should_capture."""
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    timeout = httpx.Timeout(connect=60.0, read=300.0, write=30.0, pool=30.0)
+
+    upstream = f"{VISION_AI_URL}/detect/redhat"
+    params = []
+    if model:
+        params.append(f"model={model}")
+    if annotate:
+        params.append("annotate=true")
+    if params:
+        upstream += "?" + "&".join(params)
+
+    body = await request.body()
+    content_type = request.headers.get("content-type", "")
+
+    async with httpx.AsyncClient(verify=ssl_ctx, timeout=timeout) as c:
+        resp = await c.post(
+            upstream,
+            content=body,
+            headers={"Content-Type": content_type},
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        if annotate:
+            out = {
+                "Access-Control-Expose-Headers": "X-RedHat-Hits, X-Should-Capture, X-RedHat-Json",
+            }
+            if resp.headers.get("x-redhat-hits"):
+                out["X-RedHat-Hits"] = resp.headers["x-redhat-hits"]
+            if resp.headers.get("x-should-capture"):
+                out["X-Should-Capture"] = resp.headers["x-should-capture"]
+            if resp.headers.get("x-redhat-json"):
+                out["X-RedHat-Json"] = resp.headers["x-redhat-json"]
+            return StreamingResponse(
+                io.BytesIO(resp.content),
+                media_type="image/jpeg",
+                headers=out,
+            )
+        return resp.json()
+
+
 @app.post("/api/vision/brief", dependencies=[Depends(verify_token)])
 async def vision_brief(request: Request):
     """Tactical text brief from refined detections via Shepherd (or configured model)."""
