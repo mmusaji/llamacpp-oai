@@ -701,72 +701,10 @@ body::after {
   overflow: hidden;
 }
 
-.vision-stream-container img,
-.vision-stream-container video.fedora-cam {
+.vision-stream-container img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-}
-
-.btn-fedora-watch {
-  padding: 4px 10px;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-family: inherit;
-  font-size: 9px;
-  letter-spacing: 1.5px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-fedora-watch:hover {
-  border-color: var(--red);
-  color: var(--red);
-}
-
-.btn-fedora-watch.active {
-  border-color: var(--red);
-  color: #fff;
-  background: var(--red);
-}
-
-.fedora-banner {
-  display: none;
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 8px 16px;
-  background: var(--red);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  z-index: 2;
-}
-
-.fedora-banner.on {
-  display: block;
-}
-
-.fedora-gallery {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-  max-height: 88px;
-}
-
-.fedora-gallery img {
-  height: 72px;
-  width: auto;
-  object-fit: cover;
-  border: 2px solid var(--red);
-  flex-shrink: 0;
 }
 
 .vision-overlay {
