@@ -13,7 +13,7 @@
   <meta name="twitter:description" content="Centralized AI command, control, and coordination. Direct autonomous AI units in real time from a single tactical interface.">
   <meta name="theme-color" content="#00ff41">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="style.css?v=fedora2">
+  <link rel="stylesheet" href="style.css?v=fedora3">
 </head>
 <body>
 
@@ -88,7 +88,11 @@
           <div class="vision-bar">
             <div class="vision-bar-left">
               <button class="btn-vision-upload" id="btn-vision-upload" title="Upload image or video">+</button>
-              <button class="btn-fedora-watch" id="btn-fedora-watch" title="Freeze-frame Red Hat fedora detect (webcam)">FEDORA</button>
+              <button class="btn-fedora-watch" id="btn-fedora-watch" title="Red Hat fedora detect">FEDORA</button>
+              <div class="fedora-feed-toggle" id="fedora-feed-toggle" style="display:none" role="group" aria-label="Fedora feed source">
+                <button type="button" class="btn-fedora-feed" id="btn-fedora-cam" data-feed="camera" title="Webcam freeze-frame every 5s">CAM</button>
+                <button type="button" class="btn-fedora-feed" id="btn-fedora-upload-feed" data-feed="upload" title="Upload a still for fedora detect">UPLOAD</button>
+              </div>
               <span class="vision-label" id="vision-label">LIVE INFERENCE FEED</span>
             </div>
             <span class="vision-indicator" id="vision-indicator"></span>
@@ -126,6 +130,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=fedora2"></script>
+  <script src="app.js?v=fedora3"></script>
 </body>
 </html>

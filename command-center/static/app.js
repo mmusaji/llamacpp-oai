@@ -237,14 +237,15 @@ function hideVisionFeed() {
   document.getElementById('chat-input-area').style.display = '';
 }
 
-/* —— Red Hat fedora watch: hidden cam → freeze-frame every 5s → show annotated still → discard —— */
+/* —— Fedora detect: mode on + feed = camera | upload (mutually exclusive) —— */
 const FEDORA_INTERVAL_MS = 5000;
 let fedoraWatch = {
   on: false,
+  feed: null, // 'camera' | 'upload' | null
   stream: null,
   timer: null,
   busy: false,
-  lastUrl: null, // object URL for current freeze frame only
+  lastUrl: null,
 };
 
 function revokeFedoraFrame() {
@@ -254,8 +255,17 @@ function revokeFedoraFrame() {
   }
 }
 
-function stopFedoraWatch() {
-  fedoraWatch.on = false;
+function syncFedoraFeedButtons() {
+  const toggle = document.getElementById('fedora-feed-toggle');
+  const camBtn = document.getElementById('btn-fedora-cam');
+  const upBtn = document.getElementById('btn-fedora-upload-feed');
+  if (!toggle) return;
+  toggle.style.display = fedoraWatch.on ? 'inline-flex' : 'none';
+  if (camBtn) camBtn.classList.toggle('active', fedoraWatch.feed === 'camera');
+  if (upBtn) upBtn.classList.toggle('active', fedoraWatch.feed === 'upload');
+}
+
+function stopFedoraCamera() {
   if (fedoraWatch.timer) {
     clearInterval(fedoraWatch.timer);
     fedoraWatch.timer = null;
@@ -264,71 +274,43 @@ function stopFedoraWatch() {
     fedoraWatch.stream.getTracks().forEach((t) => t.stop());
     fedoraWatch.stream = null;
   }
-  revokeFedoraFrame();
   const cam = document.getElementById('fedora-cam');
-  const streamImg = document.getElementById('vision-stream');
-  const btn = document.getElementById('btn-fedora-watch');
-  const banner = document.getElementById('fedora-banner');
   if (cam) {
     cam.srcObject = null;
     cam.style.display = 'none';
   }
+}
+
+function stopFedoraWatch() {
+  fedoraWatch.on = false;
+  fedoraWatch.feed = null;
+  fedoraWatch.busy = false;
+  stopFedoraCamera();
+  revokeFedoraFrame();
+  const streamImg = document.getElementById('vision-stream');
+  const btn = document.getElementById('btn-fedora-watch');
+  const banner = document.getElementById('fedora-banner');
   if (streamImg) {
     streamImg.style.display = '';
     if (streamImg.src && streamImg.src.startsWith('blob:')) streamImg.removeAttribute('src');
   }
   if (btn) btn.classList.remove('active');
   if (banner) banner.classList.remove('on');
+  syncFedoraFeedButtons();
 }
 
-async function startFedoraWatch() {
-  const cam = document.getElementById('fedora-cam');
+async function enterFedoraMode() {
   const streamImg = document.getElementById('vision-stream');
-  const overlay = document.getElementById('vision-overlay');
-  const status = document.getElementById('vision-status');
-  const label = document.getElementById('vision-label');
-  const indicator = document.getElementById('vision-indicator');
   const btn = document.getElementById('btn-fedora-watch');
-
-  // Stop MJPEG; stage shows freeze frames only (cam stays hidden)
+  // Pause MJPEG / standard vision while fedora is active
   streamImg.onload = null;
   streamImg.onerror = null;
   streamImg.removeAttribute('src');
   streamImg.style.display = '';
-  cam.style.display = 'none';
-
-  overlay.style.display = 'flex';
-  status.textContent = 'REQUESTING CAMERA...';
-  indicator.className = 'vision-indicator connecting';
-  label.textContent = 'FEDORA WATCH — FREEZE FRAME 5s';
-
-  try {
-    fedoraWatch.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
-  } catch (e) {
-    status.textContent = 'CAMERA DENIED / UNAVAILABLE';
-    indicator.className = 'vision-indicator offline';
-    applyVisionState(activeModel);
-    return;
-  }
-
-  cam.srcObject = fedoraWatch.stream;
-  await cam.play().catch(() => {});
   btn.classList.add('active');
   fedoraWatch.on = true;
-  setVisionBrief('Freeze-frame every 5s — annotated still shown, then discarded. No local save.');
-
-  if (fedoraWatch.timer) clearInterval(fedoraWatch.timer);
-  // First frame ASAP once video has dimensions
-  const kick = () => {
-    if (!fedoraWatch.on) return;
-    if (cam.videoWidth) scanFedoraFrame();
-    else setTimeout(kick, 200);
-  };
-  kick();
-  fedoraWatch.timer = setInterval(() => { scanFedoraFrame(); }, FEDORA_INTERVAL_MS);
+  syncFedoraFeedButtons();
+  await setFedoraFeed('camera');
 }
 
 async function toggleFedoraWatch() {
@@ -338,7 +320,69 @@ async function toggleFedoraWatch() {
     applyVisionState(activeModel);
     return;
   }
-  await startFedoraWatch();
+  await enterFedoraMode();
+}
+
+async function setFedoraFeed(feed) {
+  if (!fedoraWatch.on) return;
+  if (feed !== 'camera' && feed !== 'upload') return;
+
+  fedoraWatch.feed = feed;
+  syncFedoraFeedButtons();
+
+  const overlay = document.getElementById('vision-overlay');
+  const status = document.getElementById('vision-status');
+  const label = document.getElementById('vision-label');
+  const indicator = document.getElementById('vision-indicator');
+
+  if (feed === 'upload') {
+    stopFedoraCamera();
+    fedoraWatch.busy = false;
+    revokeFedoraFrame();
+    const streamImg = document.getElementById('vision-stream');
+    if (streamImg) streamImg.removeAttribute('src');
+    overlay.style.display = 'flex';
+    status.textContent = 'FEDORA UPLOAD — CHOOSE IMAGE (+)';
+    indicator.className = 'vision-indicator connecting';
+    label.textContent = 'FEDORA · UPLOAD FEED';
+    setVisionBrief('Upload feed: pick a still with +. Camera is off. Result stays until you upload again or switch to CAM.');
+    return;
+  }
+
+  // camera feed
+  overlay.style.display = 'flex';
+  status.textContent = 'REQUESTING CAMERA...';
+  indicator.className = 'vision-indicator connecting';
+  label.textContent = 'FEDORA · CAMERA FEED';
+  setVisionBrief('Camera feed: freeze-frame every 5s. Annotated still shown, then discarded. Switch to UPLOAD to analyze a file.');
+
+  const cam = document.getElementById('fedora-cam');
+  cam.style.display = 'none';
+  try {
+    if (!fedoraWatch.stream) {
+      fedoraWatch.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      cam.srcObject = fedoraWatch.stream;
+      await cam.play().catch(() => {});
+    }
+  } catch (e) {
+    status.textContent = 'CAMERA DENIED / UNAVAILABLE';
+    indicator.className = 'vision-indicator offline';
+    setVisionBrief('Camera unavailable — switch to UPLOAD feed.');
+    await setFedoraFeed('upload');
+    return;
+  }
+
+  if (fedoraWatch.timer) clearInterval(fedoraWatch.timer);
+  const kick = () => {
+    if (!fedoraWatch.on || fedoraWatch.feed !== 'camera') return;
+    if (cam.videoWidth) scanFedoraFrame();
+    else setTimeout(kick, 200);
+  };
+  kick();
+  fedoraWatch.timer = setInterval(() => { scanFedoraFrame(); }, FEDORA_INTERVAL_MS);
 }
 
 function fedoraDetectionsFromSummary(summary) {
@@ -377,7 +421,7 @@ async function postFedoraAnnotate(fileOrBlob, filename = 'frame.jpg') {
 }
 
 async function scanFedoraFrame() {
-  if (!fedoraWatch.on || fedoraWatch.busy) return;
+  if (!fedoraWatch.on || fedoraWatch.feed !== 'camera' || fedoraWatch.busy) return;
   const cam = document.getElementById('fedora-cam');
   if (!cam || !cam.videoWidth) return;
 
@@ -391,7 +435,7 @@ async function scanFedoraFrame() {
   overlay.style.display = 'flex';
   status.textContent = 'CAPTURING FRAME...';
   indicator.className = 'vision-indicator connecting';
-  label.textContent = 'FEDORA WATCH — ANALYZING';
+  label.textContent = 'FEDORA · CAMERA — ANALYZING';
 
   let blob = null;
   try {
@@ -404,7 +448,9 @@ async function scanFedoraFrame() {
 
     status.textContent = 'FEDORA INFERENCE...';
     const { hits, capture, summary, jpeg } = await postFedoraAnnotate(blob, 'frame.jpg');
-    blob = null; // drop capture buffer
+    blob = null;
+
+    if (!fedoraWatch.on || fedoraWatch.feed !== 'camera') return;
 
     const url = URL.createObjectURL(jpeg);
     revokeFedoraFrame();
@@ -414,10 +460,9 @@ async function scanFedoraFrame() {
     overlay.style.display = 'none';
     indicator.className = 'vision-indicator live';
     label.textContent = capture
-      ? 'FEDORA WATCH — HIT (NEXT FRAME 5s)'
-      : 'FEDORA WATCH — FREEZE FRAME (NEXT 5s)';
+      ? 'FEDORA · CAMERA — HIT (NEXT 5s)'
+      : 'FEDORA · CAMERA — STILL (NEXT 5s)';
 
-    const wearers = (summary.persons || []).filter((p) => p.wearing_red_hat);
     if (capture) {
       const banner = document.getElementById('fedora-banner');
       banner.classList.add('on');
@@ -425,19 +470,21 @@ async function scanFedoraFrame() {
       setVisionBrief(`RH fedora detected (${hits}). Next freeze frame in 5s…`);
       try {
         const brief = await requestVisionBrief(fedoraDetectionsFromSummary(summary));
-        if (fedoraWatch.on) setVisionBrief(brief.brief || `RH fedora detected (${hits}).`);
-      } catch (_) { /* brief optional */ }
+        if (fedoraWatch.on && fedoraWatch.feed === 'camera') {
+          setVisionBrief(brief.brief || `RH fedora detected (${hits}).`);
+        }
+      } catch (_) { /* optional */ }
     } else {
       setVisionBrief(
-        wearers.length
-          ? `Scored ${summary.persons?.length || 0} person(s) — no RH fedora. Next frame in 5s.`
-          : `No RH fedora (${summary.persons?.length || 0} person(s)). Next frame in 5s.`,
+        `No RH fedora (${summary.persons?.length || 0} person(s)). Next frame in 5s.`,
       );
     }
   } catch (e) {
-    setVisionBrief(`Fedora scan failed: ${e.message || e}`);
-    status.textContent = 'FRAME FAILED — RETRYING';
-    indicator.className = 'vision-indicator offline';
+    if (fedoraWatch.feed === 'camera') {
+      setVisionBrief(`Fedora scan failed: ${e.message || e}`);
+      status.textContent = 'FRAME FAILED — RETRYING';
+      indicator.className = 'vision-indicator offline';
+    }
   } finally {
     blob = null;
     fedoraWatch.busy = false;
@@ -532,7 +579,11 @@ function applyVisionState(modelName) {
   stream.src = visionStreamUrl('live', modelName);
 }
 
-function triggerVisionUpload() {
+async function triggerVisionUpload() {
+  // Fedora active → force UPLOAD feed (stops camera loop) before file picker
+  if (fedoraWatch.on && fedoraWatch.feed !== 'upload') {
+    await setFedoraFeed('upload');
+  }
   document.getElementById('vision-file-input').click();
 }
 
@@ -559,6 +610,11 @@ async function handleVisionFileSelected(e) {
   const file = e.target.files[0];
   if (!file) return;
   e.target.value = '';
+
+  if (fedoraWatch.on && !file.type.startsWith('image/')) {
+    setVisionBrief('Fedora upload feed accepts still images only.');
+    return;
+  }
 
   if (file.type.startsWith('image/')) {
     await handleVisionImageUpload(file);
@@ -748,11 +804,12 @@ async function handleVisionImageUpload(file) {
     setVisionBrief('');
   }
 
-  // Pause freeze-frame loop while upload runs
-  if (useFedora) fedoraWatch.busy = true;
-
   try {
     if (useFedora) {
+      // Hard switch off camera so 5s loop cannot overwrite this still
+      if (fedoraWatch.feed !== 'upload') await setFedoraFeed('upload');
+      fedoraWatch.busy = true;
+
       const { hits, capture, summary, jpeg } = await postFedoraAnnotate(file, file.name || 'upload.jpg');
       if (state.briefGen !== gen) return;
 
@@ -762,13 +819,12 @@ async function handleVisionImageUpload(file) {
       const streamImg = document.getElementById('vision-stream');
       streamImg.style.display = '';
       streamImg.src = url;
-      // Stay in fedora watch — do not flip to generic image mode / YOLO annotate
       if (viewActive()) {
         overlay.style.display = 'none';
         indicator.className = 'vision-indicator live';
         label.textContent = capture
-          ? 'FEDORA UPLOAD — HIT'
-          : 'FEDORA UPLOAD — NO HIT';
+          ? 'FEDORA · UPLOAD — HIT'
+          : 'FEDORA · UPLOAD — NO HIT';
         if (capture) {
           const banner = document.getElementById('fedora-banner');
           banner.classList.add('on');
@@ -777,12 +833,13 @@ async function handleVisionImageUpload(file) {
       }
       const detections = fedoraDetectionsFromSummary(summary);
       if (!detections.length && hits === 0) {
-        await applyBriefResult(channel, gen, 'No RH fedora in upload.', { hideOverlay: true });
+        await applyBriefResult(channel, gen, 'No RH fedora in upload. Camera stays off until you pick CAM.', { hideOverlay: true });
       } else {
         await runShepherdBrief(channel, gen, detections.length ? detections : [
           { class_name: capture ? 'red_hat_fedora' : 'person', confidence: capture ? 0.9 : 0.5 },
         ]);
       }
+      // Hold still — camera stays off until user selects CAM
       return;
     }
 
@@ -1496,10 +1553,20 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-logout').addEventListener('click', logout);
   document.getElementById('btn-sidebar-toggle').addEventListener('click', toggleSidebar);
   document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
-  document.getElementById('btn-vision-upload').addEventListener('click', triggerVisionUpload);
+  document.getElementById('btn-vision-upload').addEventListener('click', () => {
+    triggerVisionUpload().catch((e) => setVisionBrief(`Upload error: ${e.message || e}`));
+  });
   document.getElementById('vision-file-input').addEventListener('change', handleVisionFileSelected);
   document.getElementById('btn-fedora-watch').addEventListener('click', () => {
-    toggleFedoraWatch().catch((e) => setVisionBrief(`Camera error: ${e.message || e}`));
+    toggleFedoraWatch().catch((e) => setVisionBrief(`Fedora error: ${e.message || e}`));
+  });
+  document.getElementById('btn-fedora-cam').addEventListener('click', () => {
+    setFedoraFeed('camera').catch((e) => setVisionBrief(`Camera error: ${e.message || e}`));
+  });
+  document.getElementById('btn-fedora-upload-feed').addEventListener('click', () => {
+    setFedoraFeed('upload').then(() => {
+      document.getElementById('vision-file-input').click();
+    }).catch((e) => setVisionBrief(`Upload feed error: ${e.message || e}`));
   });
 
   if (token) {

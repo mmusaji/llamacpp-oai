@@ -731,6 +731,37 @@ body::after {
   background: var(--red);
 }
 
+.fedora-feed-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.btn-fedora-feed {
+  padding: 4px 8px;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+}
+
+.btn-fedora-feed:last-child {
+  border-right: 0;
+}
+
+.btn-fedora-feed:hover {
+  color: var(--red);
+}
+
+.btn-fedora-feed.active {
+  background: var(--red);
+  color: #fff;
+}
+
 .fedora-banner {
   display: none;
   position: absolute;
