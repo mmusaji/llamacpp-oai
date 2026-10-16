@@ -47,10 +47,9 @@ FastAPI application that captures RTSP frames and/or uploaded video, runs multi-
 
 | Model | Purpose | Format |
 |-------|---------|--------|
-| [YOLO26n](https://github.com/ultralytics/ultralytics) | Object detection (COCO 80 classes) | ONNX |
-| [YOLO26n-seg](https://github.com/ultralytics/ultralytics) | Detection + instance segmentation (COCO 80 classes) | ONNX |
+| [YOLO26n-seg](https://github.com/ultralytics/ultralytics) | Primary detector (`yolo26`): boxes + instance masks (COCO 80) | ONNX |
 
-Both models run on CPU via the `onnxruntime-cpu` ServingRuntime.
+Runs on CPU via the `onnxruntime-cpu` ServingRuntime.
 
 ## API Endpoints
 
