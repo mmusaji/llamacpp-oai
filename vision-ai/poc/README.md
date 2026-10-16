@@ -19,18 +19,18 @@ cd vision-ai/poc
 python3 -m venv .venv && source .venv/bin/activate
 pip install -U pip
 pip install ultralytics open-clip-torch opencv-python-headless pillow
-mkdir -p samples poc_out
-# drop a few JPGs into samples/ (red fedora + no-hat controls)
+mkdir -p samples poc_out   # gitignored — do not commit photos
+# drop local JPGs into samples/ (never push these)
 python poc_redhat_clip.py samples/
 ```
 
 ## Against vision-ai
 
 ```bash
-curl -sS -F "file=@samples/red_fedora.jpg" \
+# Use a local file path; do not add sample images to the repo
+curl -sS -F "file=@/path/to/local.jpg" \
   "http://VISION:8080/detect/redhat" | jq .
-# annotated JPEG:
-curl -sS -F "file=@samples/red_fedora.jpg" \
+curl -sS -F "file=@/path/to/local.jpg" \
   "http://VISION:8080/detect/redhat?annotate=true" -o out.jpg -D -
 ```
 

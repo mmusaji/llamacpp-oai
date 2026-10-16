@@ -108,8 +108,7 @@ oc create secret generic rtsp-credentials \
 Place ONNX files in your S3 bucket:
 
 ```
-/models/yolo26m.onnx           # YOLO26m detection
-/models/yolo26n-seg.onnx       # YOLO26n segmentation
+/models/yolo26n-seg.onnx       # YOLO26n-seg (primary yolo26 ISVC + optional yolo26-seg)
 ```
 
 ### 5. Deploy with ArgoCD
@@ -120,7 +119,7 @@ oc apply -f argocd/application.yaml
 
 ArgoCD watches the `main` branch and auto-syncs the `vision-ai/k8s/` directory, deploying:
 - ServingRuntimes (ROCm and CPU)
-- InferenceServices (YOLO26n detection and YOLO26n-seg segmentation)
+- InferenceServices (primary `yolo26` = YOLO26n-seg; optional `yolo26-seg`)
 - Vision AI app deployment, service, and route
 - gRPC bypass services for direct pod access
 
@@ -142,8 +141,8 @@ app/
 k8s/
   servingruntime-rocm.yaml  # KServe ServingRuntime CR (onnxruntime-migraphx)
   servingruntime-cpu.yaml   # KServe ServingRuntime CR (onnxruntime-cpu)
-  inferenceservice.yaml     # YOLO26n detection InferenceService
-  inferenceservice-seg.yaml # YOLO26n-seg segmentation InferenceService
+  inferenceservice.yaml     # Primary yolo26 InferenceService (YOLO26n-seg)
+  inferenceservice-seg.yaml # Optional yolo26-seg InferenceService (same weights)
   vision-ai-yolox.yaml      # App Deployment, Service, Route
   vision-ai-yolox-grpc.yaml # gRPC services bypassing kube-rbac-proxy
   vision-ai-yolox-rbac.yaml # RBAC for app SA to access InferenceServices

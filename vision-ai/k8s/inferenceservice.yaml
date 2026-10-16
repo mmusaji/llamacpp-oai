@@ -5,13 +5,13 @@ metadata:
   namespace: sovereign-ai
   annotations:
     modelFormat: onnx
-    opendatahub.io/connection-path: /models/yolo26m.onnx
+    opendatahub.io/connection-path: /models/yolo26n-seg.onnx
     opendatahub.io/connections: models-odf-s3
     opendatahub.io/hardware-profile-name: cpu-only
     opendatahub.io/hardware-profile-namespace: redhat-ods-applications
     opendatahub.io/model-type: object-detection
-    openshift.io/display-name: "YOLO26m Detection"
-    openshift.io/description: "YOLO26m ONNX model with end-to-end head for real-time object detection (COCO 80 classes)"
+    openshift.io/display-name: "YOLO26n Segmentation"
+    openshift.io/description: "YOLO26n-seg ONNX end-to-end (COCO 80): boxes + instance masks. Primary yolo26 target for Command Center / Shepherd."
     security.opendatahub.io/enable-auth: "true"
     serving.kserve.io/deploymentMode: Standard
   labels:
@@ -42,6 +42,6 @@ spec:
       runtime: onnxruntime-cpu
       storage:
         key: models-odf-s3
-        path: /models/yolo26m.onnx
+        path: /models/yolo26n-seg.onnx
     serviceAccountName: models-odf-s3-sa
     timeout: 300
