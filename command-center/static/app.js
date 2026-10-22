@@ -843,7 +843,7 @@ async function detectJsonFallback(file, channel) {
   const fd = new FormData();
   fd.append('file', file);
   const detRes = await fetch(
-    `${API}/api/vision/detect?model=${encodeURIComponent(channel)}`,
+    `${API}/api/vision/detect?model=${encodeURIComponent(channel)}&tile=2`,
     { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd },
   );
   if (!detRes.ok) return [];
@@ -976,7 +976,7 @@ async function handleVisionImageUpload(file) {
 
     const fd = new FormData();
     fd.append('file', file);
-    const detectUrl = `${API}/api/vision/detect/annotate?model=${encodeURIComponent(channel)}`;
+    const detectUrl = `${API}/api/vision/detect/annotate?model=${encodeURIComponent(channel)}&tile=2`;
     const res = await fetch(detectUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
