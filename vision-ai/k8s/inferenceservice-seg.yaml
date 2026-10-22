@@ -7,7 +7,7 @@ metadata:
     modelFormat: onnx
     opendatahub.io/connection-path: /models/yolo26n-seg.onnx
     opendatahub.io/connections: models-odf-s3
-    opendatahub.io/hardware-profile-name: cpu-only
+    opendatahub.io/hardware-profile-name: default-profile
     opendatahub.io/hardware-profile-namespace: redhat-ods-applications
     opendatahub.io/model-type: object-detection
     openshift.io/display-name: "YOLO26n Segmentation"
@@ -37,8 +37,10 @@ spec:
           cpu: "8"
           memory: 8Gi
       runtime: onnxruntime-cpu
-      storage:
-        key: models-odf-s3
-        path: /models/yolo26n-seg.onnx
+      # Use PVC-backed storage for the ONNX model to avoid relying on an
+      # external MinIO image that may not be pullable in air-gapped demos.
+      # The model file is expected at /models/yolo26n-seg.onnx inside the
+      # yolo26-models PVC.
+      storageUri: pvc://yolo26-models/yolo26n-seg.onnx
     serviceAccountName: models-odf-s3-sa
     timeout: 300
