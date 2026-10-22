@@ -91,8 +91,8 @@ YOLO26 models served via KServe, consumed over gRPC by the vision-ai app.
 
 | Model | Purpose | Runtime |
 |---|---|---|
-| YOLO26n-seg (`yolo26`) | Primary: detection + instance segmentation (COCO 80) | `onnxruntime-cpu` |
-| YOLO26n-seg (`yolo26-seg`) | Optional second ISVC, same weights | `onnxruntime-cpu` |
+| YOLOv8s-seg (`yolo26`) | Primary: detection + instance segmentation (COCO 80), backing the historical "YOLO26n Segmentation" card | `onnxruntime-cpu` |
+| YOLOv8s-seg (`yolo26-seg`) | Optional second ISVC (lab only, not used in NATO demo) | `onnxruntime-cpu` |
 
 An `onnxruntime-migraphx` ServingRuntime also exists for GPU inference, but is not
 currently in use — see the hardware note below.

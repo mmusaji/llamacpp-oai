@@ -10,8 +10,10 @@ metadata:
     opendatahub.io/hardware-profile-name: default-profile
     opendatahub.io/hardware-profile-namespace: redhat-ods-applications
     opendatahub.io/model-type: object-detection
-    openshift.io/display-name: "YOLO26n Segmentation"
-    openshift.io/description: "YOLO26n-seg ONNX end-to-end (COCO 80): boxes + instance masks. Primary yolo26 target for Command Center / Shepherd."
+    # Display name intentionally keeps the historical "YOLO26n" label used in the
+    # UI, but the backing weights are YOLOv8s-seg ONNX served via yolo26.
+    openshift.io/display-name: "YOLO26n Segmentation (YOLOv8s-seg)"
+    openshift.io/description: "YOLOv8s-seg ONNX (COCO 80) served via yolo26 with PVC-backed storage. Upgraded detector for ISR-style scenes (replaces the original YOLO26n weights). Primary target for Command Center / Shepherd."
     security.opendatahub.io/enable-auth: "true"
     serving.kserve.io/deploymentMode: Standard
   labels:
