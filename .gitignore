@@ -23,3 +23,21 @@ venv/
 *.pt
 *.pth
 weights/
+
+# Demo media — keep out of git (use local-only samples)
+images/
+video-samples/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.mp4
+*.avi
+*.mov
+*.mkv
+!**/static/favicon.svg
+*.mp3
+*.wav
+*.flac
+audio-samples/

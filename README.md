@@ -2,8 +2,6 @@
 
 AI inference and tooling running on a three-node SNUC cluster under OpenShift AI.
 
-![Command Center](images/image.png)
-
 This is an edge cluster of AMD Ryzen AI 9 HX370 PCs, and that shapes almost
 everything in here. There are no discrete GPUs — just one Radeon 890M integrated GPU
 per node, sharing system RAM. Which accelerator backend works, how much memory a pod
@@ -93,8 +91,8 @@ YOLO26 models served via KServe, consumed over gRPC by the vision-ai app.
 
 | Model | Purpose | Runtime |
 |---|---|---|
-| YOLO26m | Object detection (COCO 80 classes) | `onnxruntime-cpu` |
-| YOLO26n-seg | Detection + instance segmentation | `onnxruntime-cpu` |
+| YOLO26n-seg (`yolo26`) | Primary: detection + instance segmentation (COCO 80) | `onnxruntime-cpu` |
+| YOLO26n-seg (`yolo26-seg`) | Optional second ISVC, same weights | `onnxruntime-cpu` |
 
 An `onnxruntime-migraphx` ServingRuntime also exists for GPU inference, but is not
 currently in use — see the hardware note below.
@@ -148,9 +146,8 @@ llm/
 litellm/           # LiteLLM proxy manifests
 command-center/    # Web UI (app, k8s/, pipelines/)
 vision-ai/         # Vision inference (app/, k8s/, pipelines/, argocd/, hardware-profiles/)
-audio-samples/     # Shared test fixtures
-video-samples/
 ```
+Media (photos, video clips) stay local only — not in git.
 
 ## CI/CD
 
@@ -208,8 +205,7 @@ oc create sa models-odf-s3-sa -n sovereign-ai
 Upload the ONNX models to the bucket:
 
 ```
-/models/yolo26m.onnx        # detection
-/models/yolo26n-seg.onnx    # segmentation
+/models/yolo26n-seg.onnx    # primary detection + segmentation (served as yolo26)
 ```
 
 GGUF models for the LLM runtimes go in the same bucket; see

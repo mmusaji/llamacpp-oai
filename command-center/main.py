@@ -30,10 +30,15 @@ except Exception:
 
 core_api = client.CoreV1Api()
 custom_api = client.CustomObjectsApi()
+apps_api = client.AppsV1Api()
 
 
 class LoginRequest(BaseModel):
     password: str
+
+
+class MissionSwitchRequest(BaseModel):
+    tag: str
 
 
 def verify_token(request: Request):
@@ -114,6 +119,159 @@ def _get_external_endpoints() -> list[dict]:
         _external_cache = _load_external_endpoints()
         _external_cache_time = now
     return _external_cache
+
+
+def _get_command_center_imagestream() -> dict | None:
+    """Return the command-center ImageStream (if present) in the demo namespace."""
+    try:
+        return custom_api.get_namespaced_custom_object(
+            group="image.openshift.io",
+            version="v1",
+            namespace=NAMESPACE,
+            plural="imagestreams",
+            name="command-center",
+        )
+    except client.exceptions.ApiException:
+        return None
+
+
+def _list_mission_tags() -> list[str]:
+    """
+    List mission tags from the command-center ImageStream.
+
+    Only include tags that:
+      - start with mission-
+      - have at least one imported item in status.tags[*].items
+    """
+    is_obj = _get_command_center_imagestream()
+    if not is_obj:
+        return []
+
+    seen: set[str] = set()
+    tags: list[str] = []
+
+    status_tags = (is_obj.get("status") or {}).get("tags") or []
+    for entry in status_tags:
+        tag_name = entry.get("tag")
+        if not isinstance(tag_name, str) or not tag_name.startswith("mission-"):
+            continue
+        items = entry.get("items") or []
+        if not items:
+            # No imported images recorded for this tag yet
+            continue
+        if tag_name in seen:
+            continue
+        seen.add(tag_name)
+        tags.append(tag_name)
+
+    # Fallback to spec.tags if status is empty (fresh imagestream)
+    if not tags:
+        spec_tags = (is_obj.get("spec") or {}).get("tags") or []
+        for entry in spec_tags:
+            tag_name = entry.get("name")
+            if not isinstance(tag_name, str) or not tag_name.startswith("mission-"):
+                continue
+            if tag_name in seen:
+                continue
+            seen.add(tag_name)
+            tags.append(tag_name)
+
+    return sorted(tags)
+
+
+def _get_command_center_deployment() -> client.V1Deployment:
+    try:
+        return apps_api.read_namespaced_deployment(name="command-center", namespace=NAMESPACE)
+    except client.exceptions.ApiException as e:
+        raise HTTPException(status_code=e.status or 500, detail=f"Failed to read command-center deployment: {e}")
+
+
+def _get_current_mission_tag() -> str | None:
+    dep = _get_command_center_deployment()
+    containers = (dep.spec.template.spec.containers or [])
+    web = next((c for c in containers if c.name == "web"), None)
+    if not web or not web.image:
+        return None
+    image = web.image
+    # Assume tag is after the last colon (registry:port/image:tag)
+    if ":" not in image:
+        return None
+    return image.rsplit(":", 1)[-1]
+
+
+def _build_image_with_tag(current_image: str, new_tag: str) -> str:
+    if ":" in current_image:
+        base, _ = current_image.rsplit(":", 1)
+    else:
+        base = current_image
+    return f"{base}:{new_tag}"
+
+
+@app.get("/api/missions", dependencies=[Depends(verify_token)])
+def list_missions():
+    """
+    List available mission packages (image tags) and the currently running mission.
+
+    Missions are tags on the sovereign-ai/command-center ImageStream
+    prefixed with mission- and with at least one imported image.
+    """
+    tags = _list_mission_tags()
+    current = _get_current_mission_tag()
+    return {
+        "current": current,
+        "available": tags,
+        "namespace": NAMESPACE,
+        "imagestream": "command-center",
+    }
+
+
+@app.post("/api/missions/switch", dependencies=[Depends(verify_token)])
+def switch_mission(req: MissionSwitchRequest):
+    """
+    Patch the command-center Deployment to use a different mission image tag.
+
+    This only allows switching to tags that are already present on the
+    command-center ImageStream, so field operators cannot select a tag that
+    is not pre-loaded in the internal registry.
+    """
+    tags = _list_mission_tags()
+    if not tags:
+        raise HTTPException(status_code=400, detail="No mission tags available on ImageStream command-center")
+
+    tag = req.tag.strip()
+    if tag not in tags:
+        raise HTTPException(status_code=400, detail=f"Tag {tag!r} is not an available mission")
+
+    dep = _get_command_center_deployment()
+    containers = (dep.spec.template.spec.containers or [])
+    web = next((c for c in containers if c.name == "web"), None)
+    if not web or not web.image:
+        raise HTTPException(status_code=500, detail="command-center deployment web container has no image set")
+
+    new_image = _build_image_with_tag(web.image, tag)
+
+    patch = {
+        "spec": {
+            "template": {
+                "spec": {
+                    "containers": [
+                        {"name": "web", "image": new_image},
+                    ]
+                }
+            }
+        }
+    }
+
+    try:
+        apps_api.patch_namespaced_deployment(
+            name="command-center",
+            namespace=NAMESPACE,
+            body=patch,
+        )
+    except client.exceptions.ApiException as e:
+        raise HTTPException(status_code=e.status or 500, detail=f"Failed to patch command-center deployment: {e}")
+
+    return {"current": tag, "available": tags}
 
 
 @app.get("/api/models", dependencies=[Depends(verify_token)])

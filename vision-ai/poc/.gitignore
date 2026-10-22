@@ -5,3 +5,12 @@ samples/
 __pycache__/
 *.pyc
 .DS_Store
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.mp4
+*.avi
+*.mov
+red_caps_eval/
