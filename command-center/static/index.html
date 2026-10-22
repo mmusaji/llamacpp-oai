@@ -47,6 +47,7 @@
         <div class="top-bar-status" id="model-count">--</div>
       </div>
       <div class="top-bar-right">
+        <button class="btn-mission" id="btn-mission">SWITCH MISSION</button>
         <button class="btn-logout" id="btn-logout">DISCONNECT</button>
       </div>
     </div>
@@ -118,6 +119,29 @@
       <div class="directive-footer">
         <button class="directive-reset" id="directive-reset">RESET DEFAULT</button>
         <button class="directive-save" id="directive-save">SAVE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mission Switch Modal -->
+  <div class="mission-overlay" id="mission-overlay">
+    <div class="mission-modal">
+      <div class="mission-header">
+        <span class="mission-title">MISSION PACKAGE</span>
+        <button class="mission-close" id="mission-close">&times;</button>
+      </div>
+      <div class="mission-body">
+        <div class="mission-hint">
+          Select a pre-loaded mission image from the internal registry.
+          Switching will restart Command Center with the selected package.
+        </div>
+        <label class="mission-label" for="mission-select">Available missions</label>
+        <select id="mission-select" class="mission-select"></select>
+        <div class="mission-status" id="mission-status"></div>
+      </div>
+      <div class="mission-footer">
+        <button class="mission-cancel" id="mission-cancel">CANCEL</button>
+        <button class="mission-apply" id="mission-apply">APPLY</button>
       </div>
     </div>
   </div>

@@ -16,6 +16,8 @@ let systemPrompts = JSON.parse(localStorage.getItem('cmd_directives') || '{}');
 let visionByModel = {};
 /** Last uploaded image File — re-infer when switching vision channels so labels differ */
 let lastVisionImageFile = null;
+/** Current mission tag (mission-v1, mission-v2, etc.) */
+let currentMissionTag = null;
 
 function ensureThread(modelName) {
   if (!modelName) return [];
@@ -131,6 +133,135 @@ async function showApp() {
   document.querySelector('.login-screen').classList.add('hidden');
   document.querySelector('.app-screen').classList.add('active');
   await loadModels();
+  await refreshMissionStatus();
+}
+
+// Missions
+function missionLabel(tag) {
+  if (!tag) return '';
+  return tag.startsWith('mission-') ? tag.slice('mission-'.length).toUpperCase() : tag.toUpperCase();
+}
+
+async function refreshMissionStatus() {
+  const btn = document.getElementById('btn-mission');
+  if (!btn || !token) return;
+  try {
+    const res = await fetch(`${API}/api/missions`, { headers: authHeaders() });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) return;
+    const data = await res.json();
+    currentMissionTag = data.current || null;
+    if (currentMissionTag) {
+      btn.textContent = `MISSION: ${missionLabel(currentMissionTag)}`;
+    } else {
+      btn.textContent = 'SWITCH MISSION';
+    }
+  } catch {
+    // Leave button as-is on failure
+  }
+}
+
+async function openMissionModal() {
+  const overlay = document.getElementById('mission-overlay');
+  const select = document.getElementById('mission-select');
+  const statusEl = document.getElementById('mission-status');
+  if (!overlay || !select || !statusEl) return;
+
+  statusEl.textContent = '';
+  statusEl.className = 'mission-status';
+  select.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/api/missions`, { headers: authHeaders() });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) {
+      statusEl.textContent = 'Failed to load missions.';
+      statusEl.classList.add('error');
+      return;
+    }
+    const data = await res.json();
+    const available = Array.isArray(data.available) ? data.available : [];
+    currentMissionTag = data.current || null;
+
+    select.innerHTML = '';
+    if (available.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No missions available';
+      select.appendChild(opt);
+      select.disabled = true;
+    } else {
+      available.forEach(tag => {
+        const opt = document.createElement('option');
+        opt.value = tag;
+        opt.textContent = missionLabel(tag);
+        select.appendChild(opt);
+      });
+      select.disabled = false;
+      if (currentMissionTag && available.includes(currentMissionTag)) {
+        select.value = currentMissionTag;
+      }
+    }
+
+    overlay.classList.add('active');
+  } catch {
+    statusEl.textContent = 'Failed to load missions.';
+    statusEl.classList.add('error');
+  }
+}
+
+function closeMissionModal() {
+  const overlay = document.getElementById('mission-overlay');
+  if (overlay) overlay.classList.remove('active');
+}
+
+async function applyMissionSwitch() {
+  const select = document.getElementById('mission-select');
+  const statusEl = document.getElementById('mission-status');
+  const applyBtn = document.getElementById('mission-apply');
+  const cancelBtn = document.getElementById('mission-cancel');
+  if (!select || !statusEl || !applyBtn || !cancelBtn) return;
+
+  const tag = select.value;
+  if (!tag) return;
+
+  statusEl.textContent = `Switching to mission ${missionLabel(tag)}...`;
+  statusEl.className = 'mission-status';
+  statusEl.classList.add('info');
+  select.disabled = true;
+  applyBtn.disabled = true;
+  cancelBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/api/missions/switch`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ tag }),
+    });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      statusEl.textContent = (detail || 'Mission switch failed.').slice(0, 200);
+      statusEl.className = 'mission-status error';
+      select.disabled = false;
+      applyBtn.disabled = false;
+      cancelBtn.disabled = false;
+      return;
+    }
+    const data = await res.json();
+    currentMissionTag = data.current || tag;
+    statusEl.textContent = `Mission switched to ${missionLabel(currentMissionTag)}. Pods restarting...`;
+    statusEl.className = 'mission-status success';
+    await refreshMissionStatus();
+    // Give the user a moment to read the status, then close
+    setTimeout(closeMissionModal, 1200);
+  } catch {
+    statusEl.textContent = 'Mission switch failed.';
+    statusEl.className = 'mission-status error';
+    select.disabled = false;
+    applyBtn.disabled = false;
+    cancelBtn.disabled = false;
+  }
 }
 
 async function loadModels() {
@@ -1250,6 +1381,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
   document.getElementById('btn-vision-upload').addEventListener('click', triggerVisionUpload);
   document.getElementById('vision-file-input').addEventListener('change', handleVisionFileSelected);
+  document.getElementById('btn-mission').addEventListener('click', openMissionModal);
+  document.getElementById('mission-close').addEventListener('click', closeMissionModal);
+  document.getElementById('mission-cancel').addEventListener('click', closeMissionModal);
+  document.getElementById('mission-apply').addEventListener('click', applyMissionSwitch);
+  document.getElementById('mission-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeMissionModal();
+  });
 
   if (token) {
     fetch(`${API}/api/models`, { headers: authHeaders() })
