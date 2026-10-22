@@ -1698,6 +1698,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setFedoraFeed('upload').then(() => {
       document.getElementById('vision-file-input').click();
     }).catch((e) => setVisionBrief(`Upload feed error: ${e.message || e}`));
+  });
   document.getElementById('btn-mission').addEventListener('click', openMissionModal);
   document.getElementById('mission-close').addEventListener('click', closeMissionModal);
   document.getElementById('mission-cancel').addEventListener('click', closeMissionModal);
