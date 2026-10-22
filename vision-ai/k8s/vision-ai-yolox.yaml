@@ -32,7 +32,7 @@ spec:
                   name: rtsp-credentials
                   key: RTSP_URL
             - name: CONF_THRESHOLD
-              value: "0.25"
+              value: "0.05"
             - name: INPUT_SIZE
               value: "640"
             - name: UNDISTORT_K1

@@ -20,6 +20,16 @@ COCO_CLASSES = [
     "hair drier", "toothbrush",
 ]
 
+# For demo readability, we can remap some COCO class names that often show up
+# as odd labels in ISR-style imagery (e.g. convoy shots) to more neutral
+# display names, while still preserving the raw detector class in
+# `detector_class` when needed downstream.
+DEMO_CLASS_REMAP: dict[str, str] = {
+    # Ground vehicles and convoy blobs that YOLO sometimes calls "suitcase" or "boat"
+    "suitcase": "vehicle",
+    "boat": "vehicle",
+}
+
 
 class KServeDetector:
     def __init__(self, inference_url: str, model_name: str,
@@ -66,10 +76,12 @@ class KServeDetector:
             name = self._label(cid)
             if self.excluded_classes and name in self.excluded_classes:
                 continue
+            display = DEMO_CLASS_REMAP.get(name, name)
             keep_indices.append(i)
             detections.append({
                 "class_id": cid,
-                "class_name": name,
+                "class_name": display,
+                "detector_class": name,
                 "confidence": round(float(scores[i]), 4),
                 "bbox": [round(float(v), 1) for v in boxes_xyxy[i]],
             })
