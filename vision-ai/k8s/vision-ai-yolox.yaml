@@ -32,9 +32,9 @@ spec:
                   name: rtsp-credentials
                   key: RTSP_URL
             - name: CONF_THRESHOLD
-              value: "0.15"
+              value: "0.25"
             - name: INPUT_SIZE
-              value: "832"
+              value: "640"
             - name: UNDISTORT_K1
               value: "0"
             - name: EXCLUDED_CLASSES
