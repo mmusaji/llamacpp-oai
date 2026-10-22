@@ -1381,17 +1381,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
   document.getElementById('btn-vision-upload').addEventListener('click', triggerVisionUpload);
   document.getElementById('vision-file-input').addEventListener('change', handleVisionFileSelected);
-  document.getElementById('btn-fedora-watch').addEventListener('click', () => {
-    toggleFedoraWatch().catch((e) => setVisionBrief(`Fedora error: ${e.message || e}`));
-  });
-  document.getElementById('btn-fedora-cam').addEventListener('click', () => {
-    setFedoraFeed('camera').catch((e) => setVisionBrief(`Camera error: ${e.message || e}`));
-  });
-  document.getElementById('btn-fedora-upload-feed').addEventListener('click', () => {
-    setFedoraFeed('upload').then(() => {
-      document.getElementById('vision-file-input').click();
-    }).catch((e) => setVisionBrief(`Upload feed error: ${e.message || e}`));
-  });
   document.getElementById('btn-mission').addEventListener('click', openMissionModal);
   document.getElementById('mission-close').addEventListener('click', closeMissionModal);
   document.getElementById('mission-cancel').addEventListener('click', closeMissionModal);
