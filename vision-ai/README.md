@@ -6,12 +6,12 @@ Real-time object detection and instance segmentation pipeline for OpenShift AI. 
 
 ```
                                                   gRPC :8001   ┌─────────────────────┐
-┌──────────────┐    RTSP     ┌───────────────┐ ──────────────▶ │  YOLO26n (KServe)   │
+┌──────────────┐    RTSP     ┌───────────────┐ ──────────────▶ │  YOLOv8s (\"yolo26\") │
 │  TP-Link     │ ──────────▶ │  visionai-app │                 │  Object Detection   │
 │  VIGI S245   │             │  (FastAPI)    │                 │  CPU                │
 │  RTSP Camera │             │               │  gRPC :8001     └─────────────────────┘
 └──────────────┘             │  OpenCV       │ ──────────────▶ ┌─────────────────────┐
-                             │  capture +    │                 │  YOLO26n-seg        │
+                             │  capture +    │                 │  YOLOv8s-seg        │
 ┌──────────────┐             │  annotation   │                 │  Segmentation Masks │
 │  Video       │ ──upload──▶ │               │                 │  CPU                │
 │  Upload      │             └───────────────┘                 └─────────────────────┘
@@ -47,7 +47,7 @@ FastAPI application that captures RTSP frames and/or uploaded video, runs multi-
 
 | Model | Purpose | Format |
 |-------|---------|--------|
-| [YOLO26n-seg](https://github.com/ultralytics/ultralytics) | Primary detector (`yolo26`): boxes + instance masks (COCO 80) | ONNX |
+| [YOLOv8s-seg](https://docs.ultralytics.com/models/yolov8/) | Primary detector (`yolo26`): boxes + instance masks (COCO 80) | ONNX |
 
 Runs on CPU via the `onnxruntime-cpu` ServingRuntime.
 
@@ -107,7 +107,7 @@ oc create secret generic rtsp-credentials \
 Place ONNX files in your S3 bucket:
 
 ```
-/models/yolo26n-seg.onnx       # YOLO26n-seg (primary yolo26 ISVC + optional yolo26-seg)
+/models/yolo26n-seg.onnx       # YOLOv8s-seg weights, served as yolo26 (and optional yolo26-seg)
 ```
 
 ### 5. Deploy with ArgoCD
@@ -118,7 +118,7 @@ oc apply -f argocd/application.yaml
 
 ArgoCD watches the `main` branch and auto-syncs the `vision-ai/k8s/` directory, deploying:
 - ServingRuntimes (ROCm and CPU)
-- InferenceServices (primary `yolo26` = YOLO26n-seg; optional `yolo26-seg`)
+- InferenceServices (primary `yolo26` = YOLOv8s-seg; optional `yolo26-seg`, lab only)
 - Vision AI app deployment, service, and route
 - gRPC bypass services for direct pod access
 
@@ -140,7 +140,7 @@ app/
 k8s/
   servingruntime-rocm.yaml  # KServe ServingRuntime CR (onnxruntime-migraphx)
   servingruntime-cpu.yaml   # KServe ServingRuntime CR (onnxruntime-cpu)
-  inferenceservice.yaml     # Primary yolo26 InferenceService (YOLO26n-seg)
+  inferenceservice.yaml     # Primary yolo26 InferenceService (YOLOv8s-seg)
   inferenceservice-seg.yaml # Optional yolo26-seg InferenceService (same weights)
   vision-ai-yolox.yaml      # App Deployment, Service, Route
   vision-ai-yolox-grpc.yaml # gRPC services bypassing kube-rbac-proxy
