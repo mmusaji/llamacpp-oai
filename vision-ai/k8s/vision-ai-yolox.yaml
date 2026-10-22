@@ -34,7 +34,7 @@ spec:
             - name: CONF_THRESHOLD
               value: "0.15"
             - name: INPUT_SIZE
-              value: "960"
+              value: "832"
             - name: UNDISTORT_K1
               value: "0"
             - name: EXCLUDED_CLASSES
