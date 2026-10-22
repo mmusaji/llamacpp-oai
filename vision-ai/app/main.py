@@ -190,6 +190,72 @@ def _get_detector(model: str | None = None) -> tuple[str, KServeDetector]:
     return name, _detectors[name]
 
 
+def _detect_with_tiling(
+    detector: KServeDetector,
+    image: np.ndarray,
+    tiles: int,
+) -> tuple[list[dict], list[np.ndarray] | None, float]:
+    """
+    Optional NxN tiling for ISR-style images where objects are small.
+
+    tiles <= 1 → current behaviour (single full-frame detect()).
+    tiles >= 2 → split into tiles×tiles grid, run detect() on each tile,
+    map boxes back into full-frame coordinates, and merge results.
+    """
+    if tiles is None or tiles <= 1:
+        return detector.detect(image)
+
+    h, w = image.shape[:2]
+    tiles = max(2, min(int(tiles), 4))  # clamp to 2–4 to avoid runaway compute
+    tile_w = w // tiles
+    tile_h = h // tiles
+
+    all_dets: list[dict] = []
+    all_masks: list[np.ndarray] | None = []  # becomes None if no masks at all
+    total_ms = 0.0
+
+    for ty in range(tiles):
+        for tx in range(tiles):
+            x1 = int(tx * tile_w)
+            y1 = int(ty * tile_h)
+            x2 = w if tx == tiles - 1 else int((tx + 1) * tile_w)
+            y2 = h if ty == tiles - 1 else int((ty + 1) * tile_h)
+
+            tile = image[y1:y2, x1:x2]
+            if tile.size == 0:
+                continue
+
+            dets, masks, det_ms = detector.detect(tile)
+            total_ms += det_ms
+
+            for idx, d in enumerate(dets):
+                bx1, by1, bx2, by2 = d.get("bbox", [0, 0, 0, 0])
+                gx1 = bx1 + x1
+                gy1 = by1 + y1
+                gx2 = bx2 + x1
+                gy2 = by2 + y1
+                nd = dict(d)
+                nd["bbox"] = [gx1, gy1, gx2, gy2]
+                all_dets.append(nd)
+
+                if masks is not None and idx < len(masks):
+                    m = masks[idx]
+                    full = np.zeros((h, w), dtype=np.uint8)
+                    mh, mw = m.shape[:2]
+                    fh = min(y2 - y1, mh)
+                    fw = min(x2 - x1, mw)
+                    full[y1 : y1 + fh, x1 : x1 + fw] = m[:fh, :fw]
+                    all_masks.append(full)
+
+    if not all_dets:
+        return [], None, total_ms
+
+    if all_masks is not None and len(all_masks) == 0:
+        all_masks = None
+
+    return all_dets, all_masks, total_ms
+
+
 @app.get("/health")
 def health():
     return {
@@ -208,14 +274,14 @@ def list_models():
 
 
 @app.post("/detect")
-async def detect_image(file: UploadFile, model: str = None, refine_crops: bool = True):
+async def detect_image(file: UploadFile, model: str = None, refine_crops: bool = True, tile: int | None = None):
     name, detector = _get_detector(model)
 
     contents = await file.read()
     image = np.array(Image.open(io.BytesIO(contents)).convert("RGB"))
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-    detections, masks, det_ms = detector.detect(image)
+    detections, masks, det_ms = _detect_with_tiling(detector, image, tiles=tile)
     if refine_crops and refine.enabled():
         detections = refine.refine_detections(image, detections)
 
@@ -448,12 +514,12 @@ async def detect_redhat(file: UploadFile, model: str = None, annotate: bool = Fa
 
 
 @app.post("/detect/annotate")
-async def detect_annotate(file: UploadFile, model: str = None, refine_crops: bool = True):
+async def detect_annotate(file: UploadFile, model: str = None, refine_crops: bool = True, tile: int | None = None):
     name, detector = _get_detector(model)
     contents = await file.read()
     image = np.array(Image.open(io.BytesIO(contents)).convert("RGB"))
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    detections, masks, _ = detector.detect(image)
+    detections, masks, _ = _detect_with_tiling(detector, image, tiles=tile)
     if refine_crops and refine.enabled():
         detections = refine.refine_detections(image, detections)
     if detections:
