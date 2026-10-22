@@ -23,6 +23,26 @@ k8s/deployment.yaml   # OpenShift manifests (RBAC, Deployment, Service, Route)
 pipelines/            # Tekton build pipeline
 ```
 
+## Mission packages and offline switching
+
+For the SNUC NATO demo, Command Center is also the **mission switch UI** for the edge cluster.
+
+- **Mission = image tag** on the `command-center` ImageStream in `sovereign-ai`:
+  - Baseline UI: `command-center:mission-v1` (no FEDORA controls).
+  - FEDORA mission: `command-center:mission-v2` (adds CAM / UPLOAD + fedora brief path).
+- The backend exposes:
+  - `GET /api/missions` (auth required) → lists the **current** mission tag (derived from the Deployment image) and **available** mission tags (from the ImageStream, filtered to `mission-*` tags that already have imported images).
+  - `POST /api/missions/switch` with `{"tag": "<mission-tag>"}` → **patches the `command-center` Deployment** to use that tag for the `web` container image.
+- The frontend adds a **`SWITCH MISSION`** button in the top bar:
+  - Shows the current mission (for example `MISSION: V1` or `MISSION: V2`).
+  - Opens a modal with a dropdown of only the tags returned by `GET /api/missions`.
+  - On apply, calls `POST /api/missions/switch` and shows a short status while the pod restarts.
+
+This pattern is **offline-friendly** on the SNUC:
+
+- As long as `mission-v1`, `mission-v2`, etc. are **pre-pulled into the internal registry** and present on the ImageStream, the field operator can swap missions locally with no OpenShift console and no WAN.
+- In a connected demo, ACM + Argo CD can still drive the Git-level revision flip (`main` ↔ `mission-v2`); Command Center then becomes the **on-cluster override** for switching between the already-synced mission tags when the hub is not reachable.
+
 ## Deploying
 
 ### 1. Build and push the image
