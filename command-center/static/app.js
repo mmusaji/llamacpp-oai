@@ -299,11 +299,14 @@ async function applyMissionSwitch() {
     }
     const data = await res.json();
     currentMissionTag = data.current || tag;
-    statusEl.textContent = `Mission switched to ${missionLabel(currentMissionTag)}. Pods restarting...`;
+    statusEl.textContent = `Mission switched to ${missionLabel(currentMissionTag)}. Loading the new interface...`;
     statusEl.className = 'mission-status success';
     await refreshMissionStatus();
-    // Give the user a moment to read the status, then close
-    setTimeout(closeMissionModal, 1200);
+    // A mission is a new container image. Reload after the rollout begins so
+    // the browser cannot retain V3-only controls while a V1/V2 pod is live.
+    setTimeout(() => {
+      window.location.replace(`${window.location.pathname}?mission=${encodeURIComponent(currentMissionTag)}&t=${Date.now()}`);
+    }, 8000);
   } catch {
     statusEl.textContent = 'Mission switch failed.';
     statusEl.className = 'mission-status error';
