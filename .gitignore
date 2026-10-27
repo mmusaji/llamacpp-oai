@@ -18,6 +18,9 @@ build/
 .venv/
 venv/
 
+# Local-only lab artefacts (registry cache, credentials, generated images).
+lab/
+
 # Model weights
 *.onnx
 *.pt
