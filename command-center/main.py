@@ -296,10 +296,10 @@ def list_models():
     for ep in _get_external_endpoints():
         models.append({"name": ep["name"], "display": ep["display"], "description": ep["description"], "ready": ep["ready"], "type": "external", "capabilities": ep.get("capabilities", [])})
 
-    # The candidate weights are a V3 comparison feature. The serving object
-    # remains available on the cluster, but older mission UIs must not offer it.
-    if _get_current_mission_tag() != "mission-v3":
-        models = [model for model in models if model["name"] != "yolo11-candidate"]
+    # The candidate is a set of weights behind the V3 vision selector, not a
+    # second Command Center unit. Listing it as a unit creates a misleading
+    # second path: selecting its sidebar card does not select its weights.
+    models = [model for model in models if model["name"] != "yolo11-candidate"]
     return {"models": models}
 
 
