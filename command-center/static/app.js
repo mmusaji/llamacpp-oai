@@ -12,10 +12,13 @@ let abortByModel = {};
 let activeModelCaps = [];
 let attachments = [];
 let systemPrompts = JSON.parse(localStorage.getItem('cmd_directives') || '{}');
-/** Per-channel vision view so yolo-military / yolo26 stay isolated (same idea as chatThreads) */
+/** Per-weights vision view so image results remain isolated when switching detectors. */
 let visionByModel = {};
 /** Last uploaded image File — re-infer when switching vision channels so labels differ */
 let lastVisionImageFile = null;
+/** Endpoint selected in the vision pane. Keep the booth model as the safe default. */
+const DEFAULT_VISION_MODEL = 'yolo26';
+let selectedVisionModel = localStorage.getItem('cmd_vision_model') || DEFAULT_VISION_MODEL;
 /** Current mission tag (mission-v1, mission-v2, etc.) */
 let currentMissionTag = null;
 
@@ -31,6 +34,52 @@ function ensureVisionState(modelName) {
     visionByModel[modelName] = { mode: 'live', imageUrl: null };
   }
   return visionByModel[modelName];
+}
+
+function visionChannel() {
+  return selectedVisionModel || DEFAULT_VISION_MODEL;
+}
+
+function isVisionChannelActive(channel) {
+  return isVisionModel(activeModelType) && visionChannel() === channel;
+}
+
+function syncVisionModelPicker() {
+  const picker = document.getElementById('vision-model-select');
+  if (!picker) return;
+  // A stale browser preference must never create an invalid request.
+  if (![...picker.options].some(option => option.value === visionChannel())) {
+    selectedVisionModel = DEFAULT_VISION_MODEL;
+    localStorage.removeItem('cmd_vision_model');
+  }
+  picker.value = visionChannel();
+}
+
+async function selectVisionModel() {
+  const picker = document.getElementById('vision-model-select');
+  const channel = picker.value;
+  if (channel === visionChannel()) return;
+
+  selectedVisionModel = channel;
+  localStorage.setItem('cmd_vision_model', channel);
+
+  if (!isVisionModel(activeModelType)) return;
+  // Fedora scanning owns the displayed frame. End that mode cleanly before
+  // redirecting normal inference to a different detector.
+  if (fedoraWatch.on) stopFedoraWatch();
+  const state = ensureVisionState(channel);
+  // Video playback is single-session server-side. Close it before changing model.
+  if (Object.values(visionByModel).some(s => s.mode === 'video')) {
+    await teardownVisionPlayback();
+    Object.values(visionByModel).forEach(s => {
+      if (s.mode === 'video') s.mode = 'live';
+    });
+  }
+  if (lastVisionImageFile && state.mode !== 'video') {
+    handleVisionImageUpload(lastVisionImageFile);
+  } else {
+    applyVisionState(channel);
+  }
 }
 
 function revokeVisionImage(state) {
@@ -331,7 +380,8 @@ function selectModel(m) {
   if (isVisionModel(activeModelType)) {
     showVisionFeed();
     // One upload → switch channel → fresh inference (don’t reuse the other model’s JPEG)
-    const st = ensureVisionState(activeModel);
+    const channel = visionChannel();
+    const st = ensureVisionState(channel);
     if (lastVisionImageFile && st.mode !== 'video') {
       handleVisionImageUpload(lastVisionImageFile);
     }
@@ -352,7 +402,8 @@ function showVisionFeed() {
   document.getElementById('btn-directive').style.display = 'none';
   const feed = document.getElementById('vision-feed');
   feed.style.display = 'flex';
-  applyVisionState(activeModel);
+  syncVisionModelPicker();
+  applyVisionState(visionChannel());
 }
 
 function hideVisionFeed() {
@@ -448,7 +499,7 @@ async function toggleFedoraWatch() {
   if (!isVisionModel(activeModelType)) return;
   if (fedoraWatch.on) {
     stopFedoraWatch();
-    applyVisionState(activeModel);
+    applyVisionState(visionChannel());
     return;
   }
   await enterFedoraMode();
@@ -534,7 +585,7 @@ function fedoraDetectionsFromSummary(summary) {
 async function postFedoraAnnotate(fileOrBlob, filename = 'frame.jpg') {
   const fd = new FormData();
   fd.append('file', fileOrBlob, filename);
-  const model = encodeURIComponent(activeModel || '');
+  const model = encodeURIComponent(visionChannel());
   const res = await fetch(
     `${API}/api/vision/detect/redhat?annotate=true&model=${model}`,
     { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd },
@@ -856,7 +907,7 @@ async function applyBriefResult(channel, gen, briefText, opts = {}) {
   if (state.briefGen !== gen) return false; // stale upload
   state.briefPending = false;
   state.brief = briefText || '';
-  if (activeModel === channel) {
+  if (isVisionChannelActive(channel)) {
     if (state.brief) setVisionBrief(state.brief);
     else setVisionBrief(opts.emptyMsg || 'Brief unavailable (empty response).');
     if (opts.hideOverlay) {
@@ -868,7 +919,7 @@ async function applyBriefResult(channel, gen, briefText, opts = {}) {
 }
 
 async function runShepherdBrief(channel, gen, detections, opts = {}) {
-  const viewActive = () => activeModel === channel;
+  const viewActive = () => isVisionChannelActive(channel);
   const state = ensureVisionState(channel);
   if (viewActive()) {
     document.getElementById('vision-status').textContent = 'SHEPHERD BRIEFING...';
@@ -915,7 +966,7 @@ async function pollFeedDetections(channel, gen, attempts = 8) {
 }
 
 async function handleVisionImageUpload(file) {
-  const channel = activeModel;
+  const channel = visionChannel();
   if (!channel) return;
   lastVisionImageFile = file;
 
@@ -923,7 +974,7 @@ async function handleVisionImageUpload(file) {
   const status = document.getElementById('vision-status');
   const indicator = document.getElementById('vision-indicator');
   const label = document.getElementById('vision-label');
-  const viewActive = () => activeModel === channel;
+  const viewActive = () => isVisionChannelActive(channel);
   const state = ensureVisionState(channel);
   const gen = bumpBriefGen(state);
   const useFedora = fedoraWatch.on;
@@ -1033,13 +1084,13 @@ async function handleVisionImageUpload(file) {
 }
 
 async function handleVisionVideoUpload(file) {
-  const channel = activeModel;
+  const channel = visionChannel();
   if (!channel) return;
 
   const overlay = document.getElementById('vision-overlay');
   const status = document.getElementById('vision-status');
   const indicator = document.getElementById('vision-indicator');
-  const viewActive = () => activeModel === channel;
+  const viewActive = () => isVisionChannelActive(channel);
   const state = ensureVisionState(channel);
   const gen = bumpBriefGen(state);
 
@@ -1109,7 +1160,7 @@ async function handleVisionVideoUpload(file) {
 }
 
 async function backToLiveFeed() {
-  const channel = activeModel;
+  const channel = visionChannel();
   if (!channel) return;
   const state = ensureVisionState(channel);
   clearVisionBriefState(state);
@@ -1699,6 +1750,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('vision-file-input').click();
     }).catch((e) => setVisionBrief(`Upload feed error: ${e.message || e}`));
   });
+  document.getElementById('vision-model-select').addEventListener('change', selectVisionModel);
   document.getElementById('btn-mission').addEventListener('click', openMissionModal);
   document.getElementById('mission-close').addEventListener('click', closeMissionModal);
   document.getElementById('mission-cancel').addEventListener('click', closeMissionModal);

@@ -7,6 +7,9 @@ A centralized web UI for managing and chatting with multiple AI models from a si
 - **Unified chat interface** for KServe InferenceServices and external OpenAI-compatible endpoints
 - **External endpoint support** via a ConfigMap (`gen-ai-aa-custom-model-endpoints`) that defines providers, models, and API key references
 - **Image upload** for vision-capable models (sent as base64 `image_url` content parts)
+- **In-view vision weights selector**: switch the active detector immediately without
+  redeploying the application. `YOLO26n SEG` is the booth default; `YOLO11s CUSTOM`
+  is an explicitly labelled evaluation path.
 - **Audio upload** for transcription-capable models (transcribed via Whisper, transcript included in chat)
 - **Streaming responses** with real-time stats (TTFT, tokens/sec, prompt tokens)
 - **Markdown rendering** in responses (bold, italic, headers, lists, code blocks)
