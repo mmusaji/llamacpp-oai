@@ -58,7 +58,10 @@ spec:
       serviceAccountName: command-center
       containers:
         - name: web
-          image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/command-center:mission-v3
+          # First cold-start proof uses the laptop's fixed island IP. The
+          # registry TLS certificate includes this IP; a hostname/DNS mirror
+          # policy is a later, wider RHOAI/operator step.
+          image: 192.168.68.73:5001/snuc/command-center:mission-v3
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
