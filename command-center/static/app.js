@@ -12,13 +12,10 @@ let abortByModel = {};
 let activeModelCaps = [];
 let attachments = [];
 let systemPrompts = JSON.parse(localStorage.getItem('cmd_directives') || '{}');
-/** Per-weights vision view so image results remain isolated when switching detectors. */
+/** Per-channel vision view so yolo-military / yolo26 stay isolated (same idea as chatThreads) */
 let visionByModel = {};
 /** Last uploaded image File — re-infer when switching vision channels so labels differ */
 let lastVisionImageFile = null;
-/** Endpoint selected in the vision pane. Keep the booth model as the safe default. */
-const DEFAULT_VISION_MODEL = 'yolo26';
-let selectedVisionModel = localStorage.getItem('cmd_vision_model') || DEFAULT_VISION_MODEL;
 /** Current mission tag (mission-v1, mission-v2, etc.) */
 let currentMissionTag = null;
 
@@ -34,49 +31,6 @@ function ensureVisionState(modelName) {
     visionByModel[modelName] = { mode: 'live', imageUrl: null };
   }
   return visionByModel[modelName];
-}
-
-function visionChannel() {
-  return selectedVisionModel || DEFAULT_VISION_MODEL;
-}
-
-function isVisionChannelActive(channel) {
-  return isVisionModel(activeModelType) && visionChannel() === channel;
-}
-
-function syncVisionModelPicker() {
-  const picker = document.getElementById('vision-model-select');
-  if (!picker) return;
-  // A stale browser preference must never create an invalid request.
-  if (![...picker.options].some(option => option.value === visionChannel())) {
-    selectedVisionModel = DEFAULT_VISION_MODEL;
-    localStorage.removeItem('cmd_vision_model');
-  }
-  picker.value = visionChannel();
-}
-
-async function selectVisionModel() {
-  const picker = document.getElementById('vision-model-select');
-  const channel = picker.value;
-  if (channel === visionChannel()) return;
-
-  selectedVisionModel = channel;
-  localStorage.setItem('cmd_vision_model', channel);
-
-  if (!isVisionModel(activeModelType)) return;
-  const state = ensureVisionState(channel);
-  // Video playback is single-session server-side. Close it before changing model.
-  if (Object.values(visionByModel).some(s => s.mode === 'video')) {
-    await teardownVisionPlayback();
-    Object.values(visionByModel).forEach(s => {
-      if (s.mode === 'video') s.mode = 'live';
-    });
-  }
-  if (lastVisionImageFile && state.mode !== 'video') {
-    handleVisionImageUpload(lastVisionImageFile);
-  } else {
-    applyVisionState(channel);
-  }
 }
 
 function revokeVisionImage(state) {
@@ -377,8 +331,7 @@ function selectModel(m) {
   if (isVisionModel(activeModelType)) {
     showVisionFeed();
     // One upload → switch channel → fresh inference (don’t reuse the other model’s JPEG)
-    const channel = visionChannel();
-    const st = ensureVisionState(channel);
+    const st = ensureVisionState(activeModel);
     if (lastVisionImageFile && st.mode !== 'video') {
       handleVisionImageUpload(lastVisionImageFile);
     }
@@ -399,8 +352,7 @@ function showVisionFeed() {
   document.getElementById('btn-directive').style.display = 'none';
   const feed = document.getElementById('vision-feed');
   feed.style.display = 'flex';
-  syncVisionModelPicker();
-  applyVisionState(visionChannel());
+  applyVisionState(activeModel);
 }
 
 function hideVisionFeed() {
@@ -638,7 +590,7 @@ async function applyBriefResult(channel, gen, briefText, opts = {}) {
   if (state.briefGen !== gen) return false; // stale upload
   state.briefPending = false;
   state.brief = briefText || '';
-  if (isVisionChannelActive(channel)) {
+  if (activeModel === channel) {
     if (state.brief) setVisionBrief(state.brief);
     else setVisionBrief(opts.emptyMsg || 'Brief unavailable (empty response).');
     if (opts.hideOverlay) {
@@ -650,7 +602,7 @@ async function applyBriefResult(channel, gen, briefText, opts = {}) {
 }
 
 async function runShepherdBrief(channel, gen, detections, opts = {}) {
-  const viewActive = () => isVisionChannelActive(channel);
+  const viewActive = () => activeModel === channel;
   const state = ensureVisionState(channel);
   if (viewActive()) {
     document.getElementById('vision-status').textContent = 'SHEPHERD BRIEFING...';
@@ -697,14 +649,14 @@ async function pollFeedDetections(channel, gen, attempts = 8) {
 }
 
 async function handleVisionImageUpload(file) {
-  const channel = visionChannel();
+  const channel = activeModel;
   if (!channel) return;
   lastVisionImageFile = file;
 
   const overlay = document.getElementById('vision-overlay');
   const status = document.getElementById('vision-status');
   const indicator = document.getElementById('vision-indicator');
-  const viewActive = () => isVisionChannelActive(channel);
+  const viewActive = () => activeModel === channel;
   const state = ensureVisionState(channel);
   const gen = bumpBriefGen(state);
 
@@ -776,13 +728,13 @@ async function handleVisionImageUpload(file) {
 }
 
 async function handleVisionVideoUpload(file) {
-  const channel = visionChannel();
+  const channel = activeModel;
   if (!channel) return;
 
   const overlay = document.getElementById('vision-overlay');
   const status = document.getElementById('vision-status');
   const indicator = document.getElementById('vision-indicator');
-  const viewActive = () => isVisionChannelActive(channel);
+  const viewActive = () => activeModel === channel;
   const state = ensureVisionState(channel);
   const gen = bumpBriefGen(state);
 
@@ -852,7 +804,7 @@ async function handleVisionVideoUpload(file) {
 }
 
 async function backToLiveFeed() {
-  const channel = visionChannel();
+  const channel = activeModel;
   if (!channel) return;
   const state = ensureVisionState(channel);
   clearVisionBriefState(state);
@@ -1429,7 +1381,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sidebar-backdrop').addEventListener('click', closeSidebar);
   document.getElementById('btn-vision-upload').addEventListener('click', triggerVisionUpload);
   document.getElementById('vision-file-input').addEventListener('change', handleVisionFileSelected);
-  document.getElementById('vision-model-select').addEventListener('change', selectVisionModel);
   document.getElementById('btn-mission').addEventListener('click', openMissionModal);
   document.getElementById('mission-close').addEventListener('click', closeMissionModal);
   document.getElementById('mission-cancel').addEventListener('click', closeMissionModal);
