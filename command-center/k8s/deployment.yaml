@@ -58,7 +58,7 @@ spec:
       serviceAccountName: command-center
       containers:
         - name: web
-          image: image-registry.openshift-image-registry.svc:5000/sovereign-ai/command-center:mission-v1
+          image: 192.168.68.73:5001/snuc/command-center:mission-v1
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
