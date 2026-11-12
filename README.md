@@ -2,6 +2,72 @@
 
 AI inference and tooling running on a three-node SNUC cluster under OpenShift AI.
 
+## NATO / EMEA demo delta from the APAC baseline
+
+This repository started from John Goh's APAC `llamacpp-oai` demo pattern: one
+three-node OpenShift AI cluster running Command Center, local LLMs, and vision
+inference.  The NATO/EMEA variant deliberately keeps that application pattern
+and changes the **operating model**, not the core story:
+
+- **Portable three-node kit.** Three SNUC EE-2300 systems form one compact
+  OpenShift cluster; this is not a hub-and-spoke, ACM, or Device Edge demo.
+- **NATO mission experience.** The live Command Center is `mission-v3`:
+  Qwen, Shepherd, and the booth-default YOLO26 detector are visible, while a
+  parallel YOLO11 candidate is selected only through the in-view weights
+  control.
+- **Disconnected demonstration.** A laptop-hosted, persisted registry supplies
+  the required application, RHOAI/KServe, NFD, and AMD GPU images over the
+  travel switch.  A cold-island start and a warm-island walkthrough were both
+  passed on 2026-11-02.
+- **Honest boundary.** This proves the demo can cold-start and run without WAN;
+  it does **not** claim a fully disconnected OpenShift install, upgrade, or
+  `NeverContactSource` lifecycle.  The live policy remains
+  `AllowContactingSource`, with Wi-Fi/WAN only as a recovery fallback.
+
+The environment-specific platform, mirror policy, and operator runbooks are
+maintained in the surrounding `SNUC_Demo` workspace rather than this app
+repository.  Use the workspace's `docs/2026-11-02-warm-island-snapshot.md`
+and `docs/venue-arrival-runbook.md` for the proven travel/startup procedure.
+
+## NATO live-baseline deployment
+
+This section is the deployment boundary for the live NATO kit.  Do not treat
+the generic "Setting Up From Scratch" guide below as a procedure for rebuilding
+the booth system.
+
+### Platform prerequisites
+
+The workload revision in this repository is deployed only after the following
+live platform is healthy:
+
+- Assisted three-node compact OpenShift **4.22.16** cluster
+  `snuc-openshift.demo.local`.
+- LVMS-backed local PVCs; no ODF or S3 dependency in the booth configuration.
+- OpenShift AI 3.5, NFD, AMD GPU Operator, and OpenShift GitOps installed.
+- Each SNUC exposes one `amd.com/gpu`; Vulkan is used for the accelerated LLM.
+- Laptop registry at `192.168.68.73:5001` is available before a cold start.
+
+For platform bring-up or a full rebuild, follow the outer workspace's Assisted
+install record and day-2 manifest order.  Do not apply the generic storage,
+Quay, or cluster-identity examples below to the live kit.
+
+### Workload baseline
+
+- Deploy the `mission-v3` revision for the booth user interface.
+- Preserve the live `sovereign-ai` and `sovereign-ai-ci` namespaces.
+- Keep `yolo26` as the default production detector and
+  `yolo11-candidate` as the parallel evaluation InferenceService.
+- Keep model data on the existing PVCs; do not replace it with the S3/ODF
+  example in the generic guide.
+- Preserve the laptop-registry mirror configuration and leave
+  `AllowContactingSource` in place.
+
+After any deliberate workload change, validate the cluster with the workspace
+smoke test: three Ready, schedulable nodes; healthy master pool; Ready Qwen,
+Shepherd, YOLO26 and YOLO11 candidate; then available Command Center and vision
+API.  For travel and recovery, use the venue runbook rather than changing
+manifests under show conditions.
+
 This is an edge cluster of AMD Ryzen AI 9 HX370 PCs, and that shapes almost
 everything in here. There are no discrete GPUs — just one Radeon 890M integrated GPU
 per node, sharing system RAM. Which accelerator backend works, how much memory a pod
@@ -11,7 +77,7 @@ read them before adding a workload.
 
 ## The Cluster
 
-OpenShift 4.21 with OpenShift AI 3.5, three nodes, RHEL CoreOS 9.6.
+OpenShift 4.22.16 with OpenShift AI 3.5, three nodes.
 
 | | snuc-01 | snuc-02 | snuc-03 |
 |---|---|---|---|
@@ -154,6 +220,14 @@ Media (photos, video clips) stay local only — not in git.
 Tekton pipelines build each component and restart its deployment; ArgoCD syncs the
 `k8s/` manifests. A shared `github-listener` EventListener in the `sovereign-ai-ci`
 namespace routes pushes to the right pipeline by branch.
+
+## Generic upstream-derived setup reference
+
+The following material is retained as a component-level reference for a new,
+non-NATO environment.  It assumes its own storage, registry, and cluster
+configuration.  It is **not** the supported procedure for recreating the live
+NATO demo; use [NATO live-baseline deployment](#nato-live-baseline-deployment)
+and the surrounding SNUC_Demo workspace runbooks instead.
 
 ## Setting Up From Scratch
 
